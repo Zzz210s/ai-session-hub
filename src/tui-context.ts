@@ -23,6 +23,9 @@ export interface ContextDeps {
 	quit(): void;
 	redraw(): void;
 	extensions?: ExtensionKeys;
+	pendingConfirm?(): string | undefined;
+	requestDelete(): void;
+	answerConfirm(accepted: boolean): void;
 }
 
 export function createContext(deps: ContextDeps): KeyContext {
@@ -55,6 +58,9 @@ export function createContext(deps: ContextDeps): KeyContext {
 		},
 		act: deps.act,
 		extensions: deps.extensions,
+		pendingConfirm: deps.pendingConfirm,
+		requestDelete: deps.requestDelete,
+		answerConfirm: deps.answerConfirm,
 		refresh: deps.refresh,
 		quit: deps.quit,
 		redraw: deps.redraw,

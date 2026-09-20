@@ -67,10 +67,28 @@ npm install          # installs tui-panes (optionalDependency)
 | `x` / `Ctrl+W` | close a pane; `Ctrl+Q` returns focus from a pane to the list |
 | `f` | focus the session's terminal window |
 | `c` | copy the resume command |
+| `d` | delete the selected session (asks for confirmation; see below) |
 | `1` `2` `3` `4` | filter: running / needs attention / all / historical |
 | `/` | search (name, directory, tool, session id; space-separated terms) |
 | `r` | refresh now |
 | `q` / `Esc` | quit |
+
+## Deleting a session
+
+Press `d` on a session and confirm with `y`. Three safety rules apply:
+
+1. **Running sessions cannot be deleted** — the file is being written to; focus the window (`f`) and exit the session first.
+2. **Nothing is hard-deleted**: the session file is moved to `~/.ai-session-hub/trash/` (`<timestamp>__<tool>__<name>.jsonl`), so it can be restored by moving it back.
+3. **Stale heartbeat entries are cleaned up** at the same time, so a deleted session does not linger as "running".
+
+From the CLI:
+
+```bash
+ais delete <query>          # preview only: prints the file and destination
+ais delete <query> --yes    # actually move it to the trash
+```
+
+opencode sessions live in a shared SQLite database and are **not** deletable yet (the command says so instead of guessing).
 
 ## CLI
 

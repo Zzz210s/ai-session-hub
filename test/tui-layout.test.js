@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clampLine, displayWidth, renderScreen, sanitizeForDisplay, stripAnsi } from "../src/tui-view.ts";
-import { rowLine } from "../src/tui-layout.ts";
+import { detailLines, rowLine } from "../src/tui-layout.ts";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
 
@@ -137,4 +137,15 @@ test("rowLine:被命名的会话名用亮黄色(11),未命名不着该色", () =
 	const unnamed = rowLine({ ...base, name: "自动标题", named: false }, false, 50, stateFor(120, 20));
 	assert.ok(named.includes("\u001b[38;5;11m"), "命名会话名应为亮黄色");
 	assert.ok(!unnamed.includes("\u001b[38;5;11m"), "未命名会话名不应为亮黄");
+});
+
+test("详情面板:会话名完整显示(折行,不截断)", () => {
+	const longName = "这是一个非常长的会话名用于验证详情面板会完整显示而不是被截断处理";
+	const view = sampleRow({ name: longName, named: true });
+	const lines = detailLines(view, 30, stateFor(120, 20));
+	// 折行会给每行补空格,故比较时先去掉空白
+	const joined = stripAnsi(lines.join("")).replace(/[ \t]+/g, "");
+	assert.ok(joined.includes(longName), "完整名字应出现在详情里(折行不丢字符)");
+	// 每一行都不超宽(折行而不是溢出)
+	for (const line of lines) assert.ok(displayWidth(stripAnsi(line)) <= 30, "详情行不应超宽");
 });

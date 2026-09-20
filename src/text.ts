@@ -90,3 +90,26 @@ export function sanitizeForDisplay(text: string): string {
 		.replace(/[—–]/g, "-")
 		.replace(/[✓✔]/g, "v");
 }
+
+/**
+ * 按显示宽度把文本折成多行(纯函数,CJK 宽度感知)。
+ * 供详情面板完整显示较长的会话名/路径,而不是截断。
+ */
+export function wrapText(text: string, width: number): string[] {
+	if (width <= 0) return [text];
+	const lines: string[] = [];
+	let line = "";
+	let used = 0;
+	for (const ch of text) {
+		const w = displayWidth(ch);
+		if (used + w > width && line) {
+			lines.push(line);
+			line = "";
+			used = 0;
+		}
+		line += ch;
+		used += w;
+	}
+	lines.push(line);
+	return lines;
+}

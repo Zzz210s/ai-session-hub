@@ -4,8 +4,8 @@
  */
 
 import type { SessionView } from "./model.ts";
-import { formatAge, title } from "./format.ts";
-import { clampLine, displayWidth, fit, padVisible, sanitizeForDisplay } from "./text.ts";
+import { formatAge, fullTitle, title } from "./format.ts";
+import { clampLine, displayWidth, fit, padVisible, sanitizeForDisplay, wrapText } from "./text.ts";
 import { namedNameColor, toolColor } from "./theme.ts";
 import type { TuiState } from "./tui-view.ts";
 
@@ -64,7 +64,9 @@ export function detailLines(view: SessionView | undefined, rightWidth: number, s
 		["终端标签", view.live?.tab ? `窗口 ${view.live.tab.windowPid} - 第 ${view.live.tab.index + 1} 个` : "-"],
 		["会话文件", view.file],
 	];
-	const lines = [` ${BOLD}${fit(sanitizeForDisplay(title(view)), rightWidth - 2)}${RESET}`];
+	// 会话名完整显示(按宽度折行,不截断)
+	const nameLines = wrapText(sanitizeForDisplay(fullTitle(view)), Math.max(4, rightWidth - 3));
+	const lines = nameLines.map((text) => ` ${BOLD}${fit(text, rightWidth - 2)}${RESET}`);
 	const badgeParts = [view.tool, view.state === "running" ? `> ${view.status ?? "运行中"}` : "历史", view.attention ? "需关注" : ""].filter(Boolean);
 	const tint = toolColor(view.tool, state.color !== false);
 	const badges = badgeParts.join(" | ");

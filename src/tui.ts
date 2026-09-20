@@ -5,18 +5,19 @@
 
 import type { SessionView } from "./model.ts";
 import { copyResumeCommand, focusSession, resumeCommand } from "./actions.ts";
-import { parseKeys, type KeyName } from "./keys.ts";
-import { dispatchKey, type ActionKind } from "./tui-keys.ts";
+import { type ActionKind } from "./tui-keys.ts";
+import { createInputPump } from "./tui-input.ts";
 import { createContext } from "./tui-context.ts";
 import { createTuiScreen } from "./tui-screen.ts";
 import { runAttach } from "./tui-attach.ts";
+import { createDeleteFlow } from "./tui-delete.ts";
 import { supportsColor } from "./theme.ts";
 import { loadExtensions, type ExtensionContext, type HubExtension } from "./extensions.ts";
 import { createExtensionContext } from "./tui-extension-ctx.ts";
 import { filterRows, renderScreen, stripAnsi, totalsOf, type FilterKind, type TuiState } from "./tui-view.ts";
+import { fullTitle } from "./format.ts";
 
 const REFRESH_MS = 3000;
-const ESCAPE_WAIT_MS = 40;
 const REDRAW_THROTTLE_MS = 80;
 
 export interface TuiOptions {
@@ -36,8 +37,6 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	const ui = { filter: options.filter ?? "all", query: "", searchMode: false, cursor: 0 };
 	let allRows: SessionView[] = [];
 	let message = "";
-	let inputBuffer = "";
-	let escapeTimer: ReturnType<typeof setTimeout> | null = null;
 	let drawTimer: ReturnType<typeof setTimeout> | null = null;
 	let done: () => void = () => {};
 
@@ -60,6 +59,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			width: stdout.columns ?? 120,
 			height: stdout.rows ?? 30,
 			message,
+			confirm: deleteFlow.pending(),
 			refreshedAt: new Date(),
 			now: new Date(),
 			color: supportsColor(process.env, Boolean(stdout.isTTY)),
@@ -85,7 +85,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	const screen = createTuiScreen({
 		stdin,
 		stdout,
-		onData: (chunk) => handleChunk(chunk),
+		onData: (chunk) => input.feed(chunk),
 		onResize: () => {
 			for (const extension of extensions) extension.onResize?.(extCtx);
 			draw(true);
@@ -140,11 +140,22 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		schedule: () => scheduleDraw(),
 	});
 
+	const deleteFlow = createDeleteFlow({
+		rows: () => allRows,
+		selected,
+		notify: (text) => (message = text),
+		redraw: () => draw(true),
+		reload,
+	});
+
 	const context = createContext({
 		ui,
 		rowCount: () => computeState().rows.length,
 		move,
 		act,
+		pendingConfirm: () => deleteFlow.pending(),
+		requestDelete: () => deleteFlow.request(),
+		answerConfirm: (accepted) => deleteFlow.answer(accepted),
 		extensions: {
 			handle: async (key: KeyName) => {
 				for (const extension of extensions) if (await extension.handleKey?.(key, extCtx)) return true;
@@ -161,26 +172,11 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		redraw: () => draw(true),
 	});
 
-	/** 按键分片安全:未完成的转义序列先缓冲,单独的 ESC 短暂等待后按退出处理 */
-	function handleChunk(chunk: Buffer): void {
-		const text = chunk.toString("utf8");
-		// 拓展优先处理原始输入(分屏聚焦时按键要直达会话)
-		for (const extension of extensions) {
-			if (extension.handleRawInput?.(text, extCtx)) return;
-		}
-		inputBuffer += text;
-		const { keys, rest } = parseKeys(inputBuffer);
-		inputBuffer = rest;
-		for (const key of keys) void dispatchKey(key, context);
-		if (inputBuffer && !escapeTimer) {
-			escapeTimer = setTimeout(() => {
-				escapeTimer = null;
-				const pending = inputBuffer;
-				inputBuffer = "";
-				for (const key of parseKeys(pending).keys) void dispatchKey(key, context);
-			}, ESCAPE_WAIT_MS);
-		}
-	}
+	const input = createInputPump({
+		ctx: context,
+		// 拓展优先处理原始输入(分屏聚焦时按键直达会话)
+		extensionHandled: (text) => extensions.some((extension) => extension.handleRawInput?.(text, extCtx) === true),
+	});
 
 	screen.enter();
 	await reload();
@@ -192,7 +188,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
 	await new Promise<void>((resolve) => {
 		done = (): void => {
-			if (escapeTimer) clearTimeout(escapeTimer);
+			input.dispose();
 			if (drawTimer) clearTimeout(drawTimer);
 			for (const extension of extensions) extension.dispose?.();
 			screen.leave(message || "已退出");

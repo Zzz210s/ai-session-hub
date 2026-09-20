@@ -75,7 +75,7 @@ export async function parseClaudeSession(file: string): Promise<SessionRecord | 
 		id,
 		file,
 		cwd,
-		name: summary ? summary.slice(0, 60) : undefined,
+		name: summary ? summary.slice(0, 200) : undefined, // 列表由 title() 截断;详情面板要完整显示,故多留一些
 		topic,
 		firstMessage,
 		createdAt,

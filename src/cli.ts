@@ -7,6 +7,7 @@
  *   ais doctor           探测诊断(各工具会话数、活体进程、终端标签、心跳)
  *   ais focus <查询>     聚焦匹配到的运行中会话
  *   ais resume <查询>    在新标签恢复匹配到的会话
+ *   ais delete <查询>    删除会话(默认只预览;--yes 执行,移入回收目录可恢复)
  */
 
 // node:sqlite 仍是实验特性,屏蔽这一条噪音警告(其它警告照常显示)。
@@ -27,6 +28,7 @@ import { configuredExtensions } from "./extensions.ts";
 import { describeToolColors } from "./theme.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
+import { deleteSession, planDelete, trashDir } from "./delete.ts";
 
 interface Args {
 	command: string;
@@ -36,17 +38,20 @@ interface Args {
 	noLive: boolean;
 	tools?: Tool[];
 	liveOnly: boolean;
+	/** delete 命令需显式 --yes 才真正删除(默认只预览) */
+	yes: boolean;
 }
 
 const TOOLS: Tool[] = ["pi", "claude", "opencode"];
 
 export function parseArgs(argv: string[]): Args {
-	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false };
+	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false };
 	const rest: string[] = [];
 	for (const token of argv) {
 		if (token === "--json") args.json = true;
 		else if (token === "--no-live") args.noLive = true;
 		else if (token === "--live") args.liveOnly = true;
+		else if (token === "--yes" || token === "-y") args.yes = true;
 		else if (token.startsWith("--limit")) args.limit = Number(token.split("=")[1] ?? 40) || 40;
 		else if (token.startsWith("--tool=")) {
 			const list = token
@@ -113,6 +118,32 @@ async function main(): Promise<void> {
 	if (args.liveOnly) list = list.filter((view) => view.state === "running");
 	if (args.query && (args.command === "focus" || args.command === "resume")) {
 		list = rankByQuery(list, args.query, (view) => `${title(view)} ${view.cwd} ${view.tool} ${view.id}`, 500);
+	}
+
+	if (args.command === "delete") {
+		const target = args.query ? rankByQuery(list, args.query, (view) => `${title(view)} ${view.cwd} ${view.tool} ${view.id}`, 500)[0] : undefined;
+		if (!target) {
+			console.error("用法: ais delete <查询> [--yes]  —— 默认只预览,加 --yes 才真正删除(移入回收目录)");
+			process.exitCode = 1;
+			return;
+		}
+		const plan = await planDelete(target);
+		if (!plan.supported) {
+			console.error(`FAIL ${title(target)}: ${plan.reason}`);
+			process.exitCode = 1;
+			return;
+		}
+		if (!args.yes) {
+			console.log(`将删除「${title(target)}」(${target.tool})`);
+			console.log(`  文件: ${plan.path}`);
+			console.log(`  去向: ${trashDir()}(可恢复)`);
+			console.log("确认后请加 --yes 重新执行");
+			return;
+		}
+		const result = await deleteSession(target);
+		console.log(`${result.ok ? "OK" : "FAIL"} ${title(target)}: ${result.detail}`);
+		process.exitCode = result.ok ? 0 : 1;
+		return;
 	}
 
 	if (args.command === "focus" || args.command === "resume") {

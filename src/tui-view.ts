@@ -26,6 +26,8 @@ export interface TuiState {
 	message?: string;
 	refreshedAt: Date;
 	now: Date;
+	/** 待确认的破坏性操作提示(如删除会话);非空时底部显示并等待 y/n */
+	confirm?: string;
 	/** 是否着色(由入口按 NO_COLOR / TTY 判定) */
 	color?: boolean;
 	/** 拓展接管的主体区内容(为空则显示核心的详情视图) */
@@ -102,10 +104,11 @@ function filterBar(state: TuiState): string {
 }
 
 /** 底部按键提示(分屏聚焦时不同) */
-function footerText(): string {
+function footerText(state: TuiState): string {
+	if (state.confirm) return state.confirm;
 	// 只列核心键位:Enter 的行为取决于会话状态与是否装了拓展,故不在此承诺;
 	// 拓展自己的键位由拓展通过 hints 提供(见 filterBar),无拓展时不出现任何拓展字样
-	return "a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出";
+	return "a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | 1-4 筛选 | / 搜索 | q 退出";
 }
 
 /**
@@ -134,7 +137,7 @@ export function renderScreen(state: TuiState): string[] {
 		lines[2] = ` ${DIM}没有匹配的会话(试试 3 全部 / 清空搜索)${RESET}`;
 	}
 
-	const hint = footerText();
+	const hint = footerText(state);
 	const footer = state.message ? `${state.message}  |  ${hint}` : hint;
 	lines.push(` ${DIM}${fit(footer, Math.max(0, width - 2))}${RESET}`);
 	return lines.slice(0, height).map((line) => clampLine(line, width));

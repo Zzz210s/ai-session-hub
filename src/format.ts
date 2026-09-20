@@ -96,3 +96,8 @@ export function summarize(views: SessionView[]): SummaryCounts {
 	}
 	return { total: views.length, running, attention, byTool };
 }
+
+/** 完整标题(不截断):详情面板用,列表仍用 title() 截断 */
+export function fullTitle(view: SessionView): string {
+	return view.name?.trim() || view.topic?.trim() || view.id;
+}

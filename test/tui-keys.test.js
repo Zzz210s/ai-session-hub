@@ -114,3 +114,26 @@ test("dispatchKey:非搜索态 ESC 退出程序", async () => {
 	await dispatchKey("escape", ctx);
 	assert.deepEqual(ctx.calls, ["quit"]);
 });
+
+test("dispatchKey:待确认操作只接受 y / n / Esc", async () => {
+	const ctx = fakeContext();
+	ctx.pendingConfirm = () => "删除?y/n";
+	const answers = [];
+	ctx.answerConfirm = (accepted) => answers.push(accepted);
+	await dispatchKey({ char: "x" }, ctx);      // 其它键被忽略
+	await dispatchKey("down", ctx);
+	assert.equal(answers.length, 0);
+	await dispatchKey({ char: "y" }, ctx);
+	await dispatchKey({ char: "n" }, ctx);
+	await dispatchKey("escape", ctx);
+	assert.deepEqual(answers, [true, false, false]);
+});
+
+test("dispatchKey:d 键请求删除", async () => {
+	const ctx = fakeContext();
+	let requested = 0;
+	ctx.pendingConfirm = () => undefined;
+	ctx.requestDelete = () => requested++;
+	await dispatchKey({ char: "d" }, ctx);
+	assert.equal(requested, 1);
+});
