@@ -1,0 +1,135 @@
+/**
+ * TUI 纯渲染层:状态 → 屏幕行(含 ANSI),可单测、无副作用
+ * 主体区(列表/详情/分屏)在 tui-layout.ts,文本工具在 text.ts。
+ */
+
+import type { SessionView } from "./model.ts";
+import { clampLine, displayWidth, fit, stripAnsi } from "./text.ts";
+import { renderBody } from "./tui-layout.ts";
+
+export { clampLine, displayWidth, fit, padVisible, sanitizeForDisplay, stripAnsi } from "./text.ts";
+
+export type FilterKind = "running" | "attention" | "all" | "stored";
+
+/** 分屏面板的渲染数据(由 pane 管理器提供) */
+export interface PaneView {
+	title: string;
+	focused: boolean;
+	lines: string[];
+}
+
+export interface TuiState {
+	rows: SessionView[];
+	totals: { all: number; running: number; attention: number; stored: number };
+	filter: FilterKind;
+	query: string;
+	searchMode: boolean;
+	cursor: number;
+	width: number;
+	height: number;
+	message?: string;
+	refreshedAt: Date;
+	now: Date;
+	/** 已打开的分屏面板(为空则显示详情视图) */
+	panes?: PaneView[];
+}
+
+const RESET = "\u001b[0m";
+const BOLD = "\u001b[1m";
+const DIM = "\u001b[2m";
+const REVERSE = "\u001b[7m";
+const FG_GREEN = "\u001b[38;5;114m";
+const FG_YELLOW = "\u001b[38;5;179m";
+
+/** 按筛选与搜索过滤会话(纯函数) */
+export function filterRows(rows: SessionView[], filter: FilterKind, query: string): SessionView[] {
+	const byFilter = rows.filter((row) =>
+		filter === "all" ? true : filter === "attention" ? row.attention : filter === "running" ? row.state === "running" : row.state !== "running",
+	);
+	const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+	if (!tokens.length) return byFilter;
+	return byFilter.filter((row) => {
+		const haystack = `${row.name ?? ""} ${row.topic} ${row.cwd} ${row.tool} ${row.id}`.toLowerCase();
+		return tokens.every((token) => haystack.includes(token));
+	});
+}
+
+/** 总量统计(纯函数) */
+export function totalsOf(rows: SessionView[]): TuiState["totals"] {
+	return {
+		all: rows.length,
+		running: rows.filter((row) => row.state === "running").length,
+		attention: rows.filter((row) => row.attention).length,
+		stored: rows.filter((row) => row.state !== "running").length,
+	};
+}
+
+/** 视口计算:保证 cursor 可见 */
+export function viewport(state: TuiState): { start: number; end: number; bodyHeight: number } {
+	const bodyHeight = Math.max(3, state.height - 3);
+	const total = state.rows.length;
+	let start = Math.max(0, Math.min(state.cursor - Math.floor(bodyHeight / 2), total - bodyHeight));
+	if (start < 0) start = 0;
+	return { start, end: Math.min(total, start + bodyHeight), bodyHeight };
+}
+
+function headerLine(state: TuiState): string {
+	const stats = [
+		`共 ${state.totals.all}`,
+		`${FG_GREEN}运行中 ${state.totals.running}${RESET}`,
+		state.totals.attention > 0 ? `${FG_YELLOW}需关注 ${state.totals.attention}${RESET}` : "需关注 0",
+	];
+	const plain = stats.join(" | ");
+	const gap = Math.max(1, state.width - displayWidth("AI 会话总览") - displayWidth(plain) - 3);
+	return ` ${BOLD}AI 会话总览${RESET}${" ".repeat(gap)}${DIM}${plain}${RESET} `;
+}
+
+function filterBar(state: TuiState): string {
+	const tabs: { key: FilterKind; label: string }[] = [
+		{ key: "running", label: `1 运行中 ${state.totals.running}` },
+		{ key: "attention", label: `2 需关注 ${state.totals.attention}` },
+		{ key: "all", label: `3 全部 ${state.totals.all}` },
+		{ key: "stored", label: `4 历史 ${state.totals.stored}` },
+	];
+	const rendered = tabs
+		.map((tab) => (state.filter === tab.key ? `${REVERSE}${tab.label}${RESET}` : `${DIM}${tab.label}${RESET}`))
+		.join("  ");
+	const tabsWidth = tabs.map((tab) => displayWidth(tab.label)).reduce((sum, w) => sum + w, 0) + (tabs.length - 1) * 2;
+	const search = state.searchMode ? `${BOLD}搜索: ${state.query}|${RESET}` : `${DIM}搜索: ${state.query || "(按 / 输入)"}${RESET}`;
+	const paneHint = state.panes?.length ? `${FG_GREEN}分屏 ${state.panes.length}${RESET}  ` : "";
+	const pad = Math.max(1, state.width - tabsWidth - displayWidth(stripAnsi(search)) - displayWidth(stripAnsi(paneHint)) - 4);
+	return ` ${rendered}${" ".repeat(pad)}${paneHint}${search} `;
+}
+
+/** 底部按键提示(分屏聚焦时不同) */
+function footerText(state: TuiState): string {
+	const paneFocused = state.panes?.some((pane) => pane.focused);
+	if (paneFocused) return "面板已聚焦:按键直达会话 | Ctrl+Q 回到列表 | Ctrl+W 关闭面板";
+	return "Enter 分屏打开 | a 接管终端 | f 聚焦窗口 | c 复制 | Tab 切换面板 | 1-4 筛选 | / 搜索 | q 退出";
+}
+
+/** 布局尺寸(渲染与分屏面板共用,避免两处公式漂移) */
+export function layoutMetrics(state: TuiState): { width: number; height: number; leftWidth: number; rightWidth: number; bodyHeight: number } {
+	// 末列留白:写满整行会让终端进入"折行挂起",ConPTY 下会把后续光标定位弄乱
+	const width = Math.max(40, state.width - 1);
+	const height = Math.max(10, state.height);
+	const paneMode = Boolean(state.panes?.length);
+	const leftWidth = paneMode ? Math.min(38, Math.max(24, Math.floor(width * 0.28))) : Math.min(52, Math.max(30, Math.floor(width * 0.45)));
+	return { width, height, leftWidth, rightWidth: Math.max(20, width - leftWidth - 2), bodyHeight: Math.max(3, height - 3) };
+}
+
+/** 渲染整屏(返回行数组,调用方负责输出与刷新) */
+export function renderScreen(state: TuiState): string[] {
+	const { width, height, leftWidth, rightWidth, bodyHeight } = layoutMetrics(state);
+	const paneMode = Boolean(state.panes?.length);
+
+	const lines: string[] = [headerLine(state), filterBar(state), ...renderBody(state, leftWidth, rightWidth, bodyHeight)];
+	if (state.rows.length === 0 && !paneMode) {
+		lines[2] = ` ${DIM}没有匹配的会话(试试 3 全部 / 清空搜索)${RESET}`;
+	}
+
+	const hint = footerText(state);
+	const footer = state.message ? `${state.message}  |  ${hint}` : hint;
+	lines.push(` ${DIM}${fit(footer, Math.max(0, width - 2))}${RESET}`);
+	return lines.slice(0, height).map((line) => clampLine(line, width));
+}

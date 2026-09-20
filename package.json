@@ -1,0 +1,39 @@
+{
+  "name": "ai-session-hub",
+  "version": "0.3.0",
+  "description": "主机级 AI 会话总览与跳转:TUI 一览 pi/Claude/opencode 的运行中与历史会话,聚焦窗口或在分屏面板中继续",
+  "type": "module",
+  "bin": {
+    "ais": "./src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "list": "node src/cli.ts list",
+    "doctor": "node src/cli.ts doctor",
+    "tui": "node src/cli.ts",
+    "panes": "node -e \"import('tui-panes').then(()=>console.log('tui-panes 可用')).catch(e=>console.log('未安装:', e.message))\""
+  },
+  "keywords": [
+    "ai",
+    "session-manager",
+    "tui",
+    "windows-terminal",
+    "uiautomation"
+  ],
+  "author": "Zzz210s",
+  "license": "MIT",
+  "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zzz210s/ai-session-hub.git"
+  },
+  "optionalDependencies": {
+    "tui-panes": "github:Zzz210s/tui-panes"
+  }
+}

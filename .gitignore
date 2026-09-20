@@ -1,0 +1,18 @@
+# 依赖与构建产物
+node_modules/
+dist/
+web/dist/
+*.log
+
+# AI 运行文件(不入库)
+AGENTS.md
+CLAUDE.md
+.claude/
+.ccto/
+.cursor/
+.aider*
+docs/specs/
+
+# 本机运行时数据(心跳注册表)
+.ai-sessions/
+live/
