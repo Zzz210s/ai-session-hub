@@ -23,6 +23,7 @@ import { loadViews } from "./hub.ts";
 import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
+import { configuredExtensions } from "./extensions.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
 
@@ -96,6 +97,8 @@ async function main(): Promise<void> {
 		console.log(`终端标签: ${live.tabs.length}`);
 		for (const tab of live.tabs) console.log(`  [${tab.index}]${tab.selected ? "*" : " "} ${tab.title}`);
 		console.log(`心跳记录: ${heartbeatCount}`);
+		const extensionList = configuredExtensions();
+		console.log(`拓展: ${extensionList.length ? extensionList.join(", ") : "(无 —— 核心单独运行)"}`);
 		console.log(`控制台窗口: ${live.consoleWindows.length}(非 Windows Terminal 的兜底聚焦)`);
 		const shell = resolveShell();
 		console.log(`本机 shell: ${shell}(${shellFlavor(shell)} / ${shellPromptLabel(shell)})`);

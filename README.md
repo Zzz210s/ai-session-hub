@@ -111,7 +111,13 @@ export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 **This repository is the core**: session discovery, liveness, annotation, focus/attach/copy, and the TUI shell. **Same-page split panes are provided by an extension** — the core references no concrete extension.
 
-`tui-panes` is loaded by default (used if installed; the core is unaffected when it is missing). Override the list with `AIS_EXTENSIONS=a,b` or `~/.ai-session-hub/extensions.json` (`{"extensions":["tui-panes"]}`).
+`tui-panes` is loaded by default (used if installed; the core is unaffected when it is missing). Override the list with `AIS_EXTENSIONS=a,b`, or `~/.ai-session-hub/extensions.json`. To run the **core alone** (no split panes), make the list explicitly empty:
+
+```json
+{ "extensions": [] }
+```
+
+(or `AIS_EXTENSIONS=none`). An explicitly empty list means "no extensions", not "use the defaults".
 
 An extension is a plain module (usually a package/repo) exporting `createHubExtension()`:
 

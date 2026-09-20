@@ -102,7 +102,13 @@ export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 **本仓库是核心**:负责会话发现、活性判定、标注、聚焦/接管/复制命令,以及 TUI 骨架。**同页分屏等能力由拓展提供**——核心不引用任何具体拓展。
 
-内置默认加载 `tui-panes`(装了就用,没装则核心功能完全不受影响)。拓展清单可用环境变量 `AIS_EXTENSIONS=a,b` 或 `~/.ai-session-hub/extensions.json`(`{"extensions":["tui-panes"]}`)覆盖。
+内置默认加载 `tui-panes`(装了就用,没装则核心功能完全不受影响)。拓展清单可用环境变量 `AIS_EXTENSIONS=a,b` 或 `~/.ai-session-hub/extensions.json` 覆盖。**只想跑核心(不要分屏)**就把清单显式置空:
+
+```json
+{ "extensions": [] }
+```
+
+(或 `AIS_EXTENSIONS=none`)。显式的空清单表示"不要任何拓展",不会被当成"用默认清单"。
 
 拓展是一个普通模块(通常是仓库/包),导出 `createHubExtension()`,返回:
 

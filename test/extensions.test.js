@@ -10,12 +10,20 @@ test("resolveExtensionList:无环境变量时读配置文件", () => {
 	assert.deepEqual(resolveExtensionList({ config: '{"extensions":["a","b"]}' }), ["a", "b"]);
 });
 
-test("resolveExtensionList:配置缺失/损坏/空数组时回退默认", () => {
+test("resolveExtensionList:配置缺失/损坏时回退默认", () => {
 	assert.deepEqual(resolveExtensionList({}), ["tui-panes"]);
 	assert.deepEqual(resolveExtensionList({ config: "{ 坏 JSON" }), ["tui-panes"]);
-	assert.deepEqual(resolveExtensionList({ config: '{"extensions":[]}' }), ["tui-panes"]);
-	assert.deepEqual(resolveExtensionList({ config: '{"extensions":[1,2]}' }), ["tui-panes"]);
 	assert.deepEqual(resolveExtensionList({ defaults: ["x"] }), ["x"]);
+});
+
+test("resolveExtensionList:显式空清单表示核心单独运行", () => {
+	assert.deepEqual(resolveExtensionList({ config: '{"extensions":[]}' }), []);
+	assert.deepEqual(resolveExtensionList({ env: "none" }), []);
+	assert.deepEqual(resolveExtensionList({ env: "none", config: '{"extensions":["a"]}' }), []);
+});
+
+test("resolveExtensionList:配置里的数组以它为准(过滤非字符串)", () => {
+	assert.deepEqual(resolveExtensionList({ config: '{"extensions":["a",1,null,"b"]}' }), ["a", "b"]);
 });
 
 test("validateExtension:必须有非空 name", () => {

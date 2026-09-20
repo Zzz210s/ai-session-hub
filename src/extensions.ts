@@ -74,23 +74,38 @@ export function extensionsConfigPath(): string {
 	return join(homedir(), ".ai-session-hub", "extensions.json");
 }
 
-/** 解析要加载的拓展清单(纯函数,便于单测) */
+/**
+ * 解析要加载的拓展清单(纯函数,便于单测)。
+ * 语义:
+ *   - AIS_EXTENSIONS 逗号分隔;其中出现 none 表示"不要任何拓展"
+ *   - 配置文件里 extensions 是数组时以它为准(空数组 = 不要任何拓展)
+ *   - 两者都没有 -> 默认清单
+ * 说明:显式的空清单必须能表达"核心单独运行",所以空数组不会被当成未配置。
+ */
 export function resolveExtensionList(options: { env?: string; config?: string; defaults?: string[] } = {}): string[] {
 	const defaults = options.defaults ?? DEFAULT_EXTENSIONS;
-	const fromEnv = (options.env ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-	if (fromEnv.length) return fromEnv;
+	const envRaw = (options.env ?? "").trim();
+	if (envRaw) {
+		const items = envRaw.split(",").map((item) => item.trim()).filter(Boolean);
+		if (items.includes("none")) return [];
+		if (items.length) return items;
+	}
 	if (options.config) {
 		try {
 			const parsed = JSON.parse(options.config) as { extensions?: unknown };
 			if (Array.isArray(parsed.extensions)) {
-				const list = parsed.extensions.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-				if (list.length) return list;
+				return parsed.extensions.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 			}
 		} catch {
 			/* 配置损坏时回退默认 */
 		}
 	}
 	return defaults;
+}
+
+/** 当前生效的拓展清单(供 doctor 展示) */
+export function configuredExtensions(env: NodeJS.ProcessEnv = process.env): string[] {
+	return resolveExtensionList({ env: env.AIS_EXTENSIONS, config: readConfig() });
 }
 
 function readConfig(): string | undefined {
