@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { deleteSession, planDelete } from "../src/delete.ts";
+import { canRecycleToSystem } from "../src/recycle.ts";
 
 const view = (overrides = {}) => ({
 	tool: "pi",
@@ -54,7 +55,7 @@ test("planDelete:可删除时会给出路径、去向与需清理的心跳记录
 	const { sessionFile, live } = await fixture();
 	const plan = await planDelete(view({ file: sessionFile }), { liveDirectory: live });
 	assert.equal(plan.supported, true);
-	assert.equal(plan.mode, "recycle", "默认走系统回收站");
+	assert.equal(plan.mode, canRecycleToSystem() ? "recycle" : "trash", "默认按平台能力选去向");
 	assert.equal(plan.path, sessionFile);
 	assert.equal(plan.heartbeatFiles.length, 1, "只清理 sessionId 匹配的那条");
 	assert.match(plan.heartbeatFiles[0], /pi-999\.json$/);
@@ -66,6 +67,8 @@ test("deleteSession:优先送系统回收站(不硬删除)", async () => {
 	const result = await deleteSession(view({ file: sessionFile }), {
 		trashDir: trash,
 		liveDirectory: live,
+		// 显式要求走系统回收站:让该用例在任意平台都能验证这条路径
+		allowSystemRecycle: true,
 		recycle: async (target) => {
 			recycled = target;
 			// 模拟系统回收站:把文件移走(等价效果)
@@ -86,6 +89,7 @@ test("deleteSession:系统回收站不可用时退回内部回收目录(并说�
 	const result = await deleteSession(view({ file: sessionFile }), {
 		trashDir: trash,
 		liveDirectory: live,
+		allowSystemRecycle: true,
 		recycle: async () => ({ ok: false, detail: "模拟失败" }),
 	});
 	assert.equal(result.ok, true);
