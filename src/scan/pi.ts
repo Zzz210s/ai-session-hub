@@ -76,6 +76,7 @@ export async function parsePiSession(file: string): Promise<SessionRecord | null
 		file,
 		cwd,
 		name,
+		named: Boolean(name),
 		topic: name ?? toSnippet(firstMessage) ?? "",
 		firstMessage,
 		createdAt,

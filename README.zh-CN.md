@@ -5,17 +5,21 @@
 主机级 **AI 会话总览与跳转**(TUI):一个键盘驱动的全屏看板,把本机上 pi / Claude Code / opencode 的**运行中会话**与**历史会话**汇总起来,分类标注,回车即**聚焦已有终端窗口**,或**就地接管终端继续**该会话。
 
 ```
- AI 会话总览                              共 42 | 运行中 3 | 需关注 1
- 1 运行中 3  2 需关注 1  3 全部 42  4 历史 39            搜索: (按 / 输入)
- > pi      auth-refactor   work/api     - 刚刚 - t2      auth-refactor
- * pi      docs-cleanup    work/docs    - 2 分钟前 - t1   pi | > 执行工具
-   pi      perf-tuning     work/engine  - 1 小时前        工作目录  ~/work/api
- ? claude  bug-1234        work/web     - 3 小时前        更新时间  刚刚
- ! opencode schema-migrate work/db      - 5 小时前        会话体积  6.1 MB
-                                                        终端标签  窗口 12345 - 第 3 个
-                                                        会话文件  ~/.pi/agent/sessions/...jsonl
- Enter 分屏打开 | a 接管终端 | f 聚焦窗口 | c 复制 | Tab 切换面板 | 1-4 筛选 | / 搜索 | q 退出
+ AI 会话总览                          共 42 | 运行中 3 | 需关注 1
+ 1 运行中 3  2 需关注 1  3 全部 42  4 历史 39        搜索: (按 / 输入)
+ > pi      auth-refactor          auth-refactor
+ * pi      docs-cleanup           pi | > tool
+   pi      perf-tuning            工作目录  ~/work/api
+ ? claude  bug-1234              更新时间  刚刚
+ ! opencode build-failure        创建时间  2026/09/18 10:22
+                                  会话体积  6.1 MB
+                                  进程      pid 4242
+                                  终端标签  窗口 12345 - 第 3 个
+                                  会话文件  ~/.pi/agent/sessions/...jsonl
+ Enter 打开 | a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出
 ```
+
+列表里**只保留工具名与会话名**(用 `/name` 命名过的会话名以**亮黄色**突出);目录、年龄、体积、进程号、终端标签、会话文件等全部放在右侧详情面板。
 
 ## 解决什么问题
 
@@ -91,6 +95,8 @@ NO_COLOR=1 ais        # 或 AIS_COLOR=0 ais       —— 完全关掉着色
 ```
 
 `ais doctor` 会打印当前配色。
+
+被 `/name` 命名过的会话名用**亮黄色**(256 色 11)显示,便于与自动生成标题区分。
 
 ## Shell 适配(Git Bash / PowerShell)
 

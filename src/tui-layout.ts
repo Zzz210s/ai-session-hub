@@ -4,9 +4,9 @@
  */
 
 import type { SessionView } from "./model.ts";
-import { formatAge, shortCwd, title } from "./format.ts";
+import { formatAge, title } from "./format.ts";
 import { clampLine, displayWidth, fit, padVisible, sanitizeForDisplay } from "./text.ts";
-import { toolColor } from "./theme.ts";
+import { namedNameColor, toolColor } from "./theme.ts";
 import type { TuiState } from "./tui-view.ts";
 
 const RESET = "\u001b[0m";
@@ -37,22 +37,19 @@ export function rowLine(view: SessionView, selected: boolean, leftWidth: number,
 	const glyph = statusGlyph(view);
 	const tool = view.tool.padEnd(9); // 最长工具名(opencode)后留一个空格
 	const name = sanitizeForDisplay(title(view));
-	const meta =
-		view.state === "running"
-			? `${shortCwd(view.cwd)} - ${formatAge(view.updatedAt, state.now)}${view.live?.tab ? ` - t${view.live.tab.index + 1}` : ""}`
-			: `${shortCwd(view.cwd)} - ${formatAge(view.updatedAt, state.now)}`;
-	const text = `${glyph} ${tool}${name}`;
-	const metaWidth = Math.max(0, leftWidth - displayWidth(text) - 3);
-	const body = `${fit(sanitizeForDisplay(text), leftWidth - 1 - Math.min(metaWidth, 22))}${fit(meta, Math.min(metaWidth, 22))}`;
+	// 总览里只放"工具 + 会话名";目录/年龄/标签等一律放到右侧详情
+	const body = fit(`${glyph} ${tool}${name}`, leftWidth - 1);
 	if (selected) {
 		// 选中行整行反显;行内不能插 RESET,否则反显被打断(表现为"看不到光标")
 		return `${REVERSE} ${body}${RESET}`;
 	}
 	// 工具名按各家 CLI 的品牌色着色(pi 青绿 / claude 橙 / opencode 暖橙 …)
-	const toolTint = toolColor(view.tool, state.color !== false);
-	const tinted = toolTint
-		? body.replace(tool.trimEnd(), `${toolTint}${tool.trimEnd()}${RESET}${DIM}`)
-		: body;
+	const colorOn = state.color !== false;
+	const toolTint = toolColor(view.tool, colorOn);
+	let tinted = toolTint ? body.replace(tool.trimEnd(), `${toolTint}${tool.trimEnd()}${RESET}${DIM}`) : body;
+	// 被用户命名过的会话名用亮黄色突出
+	const nameTint = view.named ? namedNameColor(colorOn) : "";
+	if (nameTint) tinted = tinted.replace(name, `${nameTint}${name}${RESET}${DIM}`);
 	return ` ${tinted.replace(glyph, `${statusColor(view)}${glyph}${RESET}${DIM}`)}${RESET}`;
 }
 
@@ -76,9 +73,6 @@ export function detailLines(view: SessionView | undefined, rightWidth: number, s
 	lines.push(` ${DIM}${fit(tintedBadges, rightWidth - 2)}${RESET}`, "");
 	for (const [label, value] of fields) {
 		lines.push(` ${DIM}${fit(label, 10)}${RESET}${fit(sanitizeForDisplay(value), Math.max(4, rightWidth - 12))}`);
-	}
-	if (!state.customBody?.length) {
-		lines.push("", ` ${DIM}Enter 打开该会话(装了拓展则在拓展视图里打开)| a 接管整个终端${RESET}`);
 	}
 	return lines;
 }

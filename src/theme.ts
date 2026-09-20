@@ -28,6 +28,15 @@ export const TOOL_COLORS: Record<string, number> = {
 /** 未知工具的中性色 */
 export const NEUTRAL_COLOR = 250;
 
+/** 被用户命名过的会话名用亮黄色突出(256 色 11 = #ffff00) */
+export const NAMED_NAME_COLOR = 11;
+
+/** 命名会话名的 SGR(不着色时为空) */
+export function namedNameColor(enabled = true): string {
+	if (!enabled) return "";
+	return `[38;5;${NAMED_NAME_COLOR}m`;
+}
+
 /** 取工具对应的 256 色索引(纯函数) */
 export function toolColorIndex(tool: string): number {
 	return TOOL_COLORS[tool] ?? NEUTRAL_COLOR;

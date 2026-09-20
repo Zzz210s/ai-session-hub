@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NEUTRAL_COLOR, supportsColor, toolColor, toolColorIndex } from "../src/theme.ts";
+import * as theme from "../src/theme.ts";
+import { NEUTRAL_COLOR, namedNameColor, supportsColor, toolColor, toolColorIndex } from "../src/theme.ts";
 
 test("toolColorIndex:各工具用各自 CLI 的品牌色", () => {
 	assert.equal(toolColorIndex("pi"), 109);      // pi accent #8abeb7
@@ -26,4 +27,11 @@ test("supportsColor:NO_COLOR / AIS_COLOR=0 / 非 TTY 都关闭", () => {
 	assert.equal(supportsColor({ NO_COLOR: "1" }, true), false);
 	assert.equal(supportsColor({ AIS_COLOR: "0" }, true), false);
 	assert.equal(supportsColor({ NO_COLOR: "" }, true), true); // 空串视为未设置
+});
+
+test("namedNameColor:命名会话用亮黄色,可关闭", () => {
+	const { namedNameColor, NAMED_NAME_COLOR } = theme;
+	assert.equal(NAMED_NAME_COLOR, 11);
+	assert.equal(namedNameColor(true), "\u001b[38;5;11m");
+	assert.equal(namedNameColor(false), "");
 });

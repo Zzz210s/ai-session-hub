@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clampLine, displayWidth, renderScreen, sanitizeForDisplay, stripAnsi } from "../src/tui-view.ts";
+import { rowLine } from "../src/tui-layout.ts";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
 
@@ -118,4 +119,22 @@ test("renderScreen:光标下移后反显位置随之下移", () => {
 	const second = renderScreen({ ...stateFor(120, 24), cursor: 1 });
 	const indexOfReverse = (lines) => lines.findIndex((line, i) => i >= 2 && line.includes("[7m"));
 	assert.equal(indexOfReverse(second) - indexOfReverse(first), 1, "反显应随光标下移一行");
+});
+
+test("rowLine:总览只显示工具名与会话名(目录/年龄/标签移出)", () => {
+	const view = { tool: "pi", id: "x", file: "f", cwd: "C:/work/api", name: "auth-refactor", topic: "t", firstMessage: "", createdAt: new Date(), updatedAt: new Date(), state: "running", status: "tool", attention: false, live: { tab: { windowPid: 1, index: 4, title: "", selected: true, hwnd: "1", windowTitle: "" } } };
+	const line = rowLine(view, false, 50, stateFor(120, 20));
+	const text = stripAnsi(line);
+	assert.match(text, /pi +auth-refactor/);
+	assert.ok(!text.includes("C:/work/api") && !text.includes("api"), "不应出现目录");
+	assert.ok(!/刚刚|分钟前/.test(text), "不应出现时间");
+	assert.ok(!/t5|tab/.test(text), "不应出现标签序号");
+});
+
+test("rowLine:被命名的会话名用亮黄色(11),未命名不着该色", () => {
+	const base = { tool: "pi", id: "x", file: "f", cwd: "C:/w", topic: "t", firstMessage: "", createdAt: new Date(), updatedAt: new Date(), state: "stored", attention: false };
+	const named = rowLine({ ...base, name: "my-session", named: true }, false, 50, stateFor(120, 20));
+	const unnamed = rowLine({ ...base, name: "自动标题", named: false }, false, 50, stateFor(120, 20));
+	assert.ok(named.includes("\u001b[38;5;11m"), "命名会话名应为亮黄色");
+	assert.ok(!unnamed.includes("\u001b[38;5;11m"), "未命名会话名不应为亮黄");
 });

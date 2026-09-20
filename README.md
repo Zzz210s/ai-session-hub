@@ -5,17 +5,21 @@
 A host-level **AI session overview** for your terminal (TUI): one keyboard-driven board listing every **running** and **historical** session of pi / Claude Code / opencode on this machine, annotated and searchable — press Enter to jump to the terminal window that owns it, open it in a **split pane**, or hand the terminal over to it.
 
 ```
- AI 会话总览                              共 42 | 运行中 3 | 需关注 1
- 1 运行中 3  2 需关注 1  3 全部 42  4 历史 39            搜索: (按 / 输入)
- > pi      auth-refactor   work/api     - 刚刚 - t2      auth-refactor
- * pi      docs-cleanup    work/docs    - 2 分钟前 - t1   pi | > 执行工具
-   pi      perf-tuning     work/engine  - 1 小时前        工作目录  ~/work/api
- ? claude  bug-1234        work/web     - 3 小时前        更新时间  刚刚
- ! opencode schema-migrate work/db      - 5 小时前        会话体积  6.1 MB
-                                                        终端标签  窗口 12345 - 第 3 个
-                                                        会话文件  ~/.pi/agent/sessions/...jsonl
- Enter 分屏打开 | a 接管终端 | f 聚焦窗口 | c 复制 | Tab 切换面板 | 1-4 筛选 | / 搜索 | q 退出
+ AI 会话总览                          共 42 | 运行中 3 | 需关注 1
+ 1 运行中 3  2 需关注 1  3 全部 42  4 历史 39        搜索: (按 / 输入)
+ > pi      auth-refactor          auth-refactor
+ * pi      docs-cleanup           pi | > tool
+   pi      perf-tuning            工作目录  ~/work/api
+ ? claude  bug-1234              更新时间  刚刚
+ ! opencode build-failure        创建时间  2026/09/18 10:22
+                                  会话体积  6.1 MB
+                                  进程      pid 4242
+                                  终端标签  窗口 12345 - 第 3 个
+                                  会话文件  ~/.pi/agent/sessions/...jsonl
+ Enter 打开 | a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出
 ```
+
+The list keeps only **tool + session name** (names you set with `/name` are highlighted in bright yellow); everything else — directory, age, size, pid, terminal tab, session file — lives in the right-hand detail pane.
 
 ## The problem
 
@@ -100,6 +104,8 @@ NO_COLOR=1 ais        # or: AIS_COLOR=0 ais      — disable all coloring
 ```
 
 `ais doctor` prints the palette in use.
+
+Named sessions (set with `/name`) render their name in **bright yellow** (256-color 11), so sessions you care about stand out from auto-generated titles.
 
 ## Shell support (Git Bash / PowerShell)
 

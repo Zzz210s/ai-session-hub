@@ -15,6 +15,12 @@ export interface SessionRecord {
 	cwd: string;
 	/** 用户显式命名(pi 的 /name、opencode 的 title) */
 	name?: string;
+	/**
+	 * 是否"被用户命名过"(工具提供了真正的命名字段)。
+	 * pi 的 /name 属于此类;Claude 只有自动摘要、opencode 的 title 多为首条消息
+	 * 自动生成,均不算命名 —— 列表里用亮黄色突出真正命名的会话。
+	 */
+	named?: boolean;
 	/** 展示用标题:名称优先,否则首个用户消息摘要 */
 	topic: string;
 	/** 首条用户消息原文(用于模糊搜索) */
