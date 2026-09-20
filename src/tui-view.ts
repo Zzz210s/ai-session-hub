@@ -26,6 +26,8 @@ export interface TuiState {
 	message?: string;
 	refreshedAt: Date;
 	now: Date;
+	/** 是否着色(由入口按 NO_COLOR / TTY 判定) */
+	color?: boolean;
 	/** 拓展接管的主体区内容(为空则显示核心的详情视图) */
 	customBody?: CustomBody;
 	/** 拓展声明的底部提示片段 */

@@ -10,6 +10,7 @@ import { dispatchKey, type ActionKind } from "./tui-keys.ts";
 import { createContext } from "./tui-context.ts";
 import { createTuiScreen } from "./tui-screen.ts";
 import { runAttach } from "./tui-attach.ts";
+import { supportsColor } from "./theme.ts";
 import { loadExtensions, type ExtensionContext, type HubExtension } from "./extensions.ts";
 import { createExtensionContext } from "./tui-extension-ctx.ts";
 import { filterRows, renderScreen, stripAnsi, totalsOf, type FilterKind, type TuiState } from "./tui-view.ts";
@@ -61,6 +62,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			message,
 			refreshedAt: new Date(),
 			now: new Date(),
+			color: supportsColor(process.env, Boolean(stdout.isTTY)),
 			customBody: body,
 			customHints: body && hints.length ? hints : undefined,
 		};

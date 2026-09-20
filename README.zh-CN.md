@@ -70,6 +70,28 @@ ais doctor               # 探测诊断:各工具会话数、活体进程、终�
 ais focus  <查询>        # 聚焦运行中的会话
 ```
 
+## 按工具着色
+
+每个工具用各自的颜色,取色来自该 CLI 自己的调色板,列表观感与工具本身一致:
+
+| 工具 | 取色来源 | 256 色 |
+|---|---|---|
+| pi | `#8abeb7`(pi 内建主题 accent) | 109 |
+| Claude Code | `#d97757`(Anthropic / Claude 橙) | 209 |
+| opencode | `#fab283`(opencode TUI 主题 `primary`) | 216 |
+| codex | `#10a37f`(OpenAI 绿) | 35 |
+| zed | `#5f87ff`(Zed 蓝) | 69 |
+| gemini | `#4285f4`(Google 蓝) | 33 |
+| 其他未知工具 | 中性灰 | 250 |
+
+只给**工具名那一列**与详情面板里的工具徽标着色;状态字形仍用它自己的状态色(绿/黄/红/暗),选中行保持整行反显——行内不插 RESET,因此光标高亮不会被打断。
+
+```bash
+NO_COLOR=1 ais        # 或 AIS_COLOR=0 ais       —— 完全关掉着色
+```
+
+`ais doctor` 会打印当前配色。
+
 ## Shell 适配(Git Bash / PowerShell)
 
 工具本身是 Node 程序,可在任意终端里跑;需要"执行命令"的两处——**接管终端(attach)** 与 **分屏面板**——会用**你本机的 shell** 承载命令:

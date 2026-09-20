@@ -79,6 +79,28 @@ ais doctor               # discovery diagnostics: per-tool counts, live processe
 ais focus  <query>       # focus a running session's window
 ```
 
+## Per-tool colors
+
+Each tool gets its own color, taken from that CLI's own palette so the list looks at home next to the tools themselves:
+
+| Tool | Source color | 256-color |
+|---|---|---|
+| pi | `#8abeb7` (pi's built-in theme accent) | 109 |
+| Claude Code | `#d97757` (Anthropic / Claude orange) | 209 |
+| opencode | `#fab283` (opencode TUI theme `primary`) | 216 |
+| codex | `#10a37f` (OpenAI green) | 35 |
+| zed | `#5f87ff` (Zed blue) | 69 |
+| gemini | `#4285f4` (Google blue) | 33 |
+| anything else | neutral gray | 250 |
+
+Only the tool column (and the tool badge in the detail pane) is tinted; the status glyph keeps its own state color (green / yellow / red / dim), and the selected row stays a plain inverse highlight so the cursor is never broken up by embedded resets.
+
+```bash
+NO_COLOR=1 ais        # or: AIS_COLOR=0 ais      — disable all coloring
+```
+
+`ais doctor` prints the palette in use.
+
 ## Shell support (Git Bash / PowerShell)
 
 The tool itself is a Node program and runs anywhere; the two places that *execute commands* — **attach** and **split panes** — carry them with **your machine's shell**:
