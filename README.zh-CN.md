@@ -32,6 +32,7 @@
 | 就地继续(attach) | 让出终端,在前台运行 `pi --session <文件>` / `claude --resume <id>`;期间本程序**完全挂起**(停刷新、摘监听、退出 raw 模式),退出会话后自动回到看板 |
 | 复制命令 | 一键把恢复命令放进剪贴板 |
 | 实时刷新 | 3 秒轮询,内容变化才重绘(无闪烁) |
+| 拓展 | 核心可被拓展增强(**同页分屏**由拓展 [tui-panes](https://github.com/Zzz210s/tui-panes) 提供);核心不引用任何具体拓展,缺失时功能不受影响 |
 | 终端兼容 | 字形与分隔符全部 ASCII(宽度不确定字符会因字体按双宽渲染而错位);整屏顺序重绘(ConPTY 会重写逐行绝对定位);末列留白避免折行挂起 |
 
 ## 安装与运行
@@ -69,22 +70,50 @@ ais doctor               # 探测诊断:各工具会话数、活体进程、终�
 ais focus  <查询>        # 聚焦运行中的会话
 ```
 
+## 拓展(核心与拓展的边界)
+
+**本仓库是核心**:负责会话发现、活性判定、标注、聚焦/接管/复制命令,以及 TUI 骨架。**同页分屏等能力由拓展提供**——核心不引用任何具体拓展。
+
+内置默认加载 `tui-panes`(装了就用,没装则核心功能完全不受影响)。拓展清单可用环境变量 `AIS_EXTENSIONS=a,b` 或 `~/.ai-session-hub/extensions.json`(`{"extensions":["tui-panes"]}`)覆盖。
+
+拓展是一个普通模块(通常是仓库/包),导出 `createHubExtension()`,返回:
+
+| 钩子 | 作用 |
+|---|---|
+| `name` | 拓展名(必填) |
+| `hints?: string[]` | 底部提示里展示自己的键位(仅当它接管视图时显示) |
+| `openSelected?(ctx)` | 核心的 Enter 智能动作会调用(如"在分屏里打开该会话") |
+| `bodyView?(ctx): string[] \| undefined` | 接管主体区渲染(返回已组合好的行);不接管则显示核心的详情视图 |
+| `handleKey?(key, ctx): boolean` | 自己的按键(返回 true 表示已消费) |
+| `handleRawInput?(text, ctx): boolean` | 原始输入(面板聚焦时按键直达会话) |
+| `onResize?(ctx)` / `dispose?()` | 尺寸变化 / 退出清理 |
+
+`ctx` 提供:`selected(): { id, title, tool, cwd, command, state }`(含**恢复命令**,拓展无需了解核心细节)、`metrics()`(它接管视图时可用尺寸)、`notify/redraw/schedule`。
+
+现有拓展:[tui-panes](https://github.com/Zzz210s/tui-panes)(同页分屏)。
+
 ## 架构
 
 ```
 src/
-├── cli.ts          命令入口(TUI / list / doctor / focus)
-├── tui.ts          交互循环:按键、3 秒刷新、attach(挂起/恢复终端)
-├── tui-view.ts     纯渲染层:状态 → 屏幕行(CJK 宽度、视口、配色),可单测
-├── model.ts        数据模型
-├── fuzzy.ts        模糊匹配与排序(纯)
-├── format.ts       列表与状态格式化(纯)
-├── scan/           会话采集:pi.ts / claude.ts / opencode.ts / io.ts(头尾读 + 流式标记扫描)
-├── live/           活体:windows.ts(进程 + WT 标签,经 PowerShell/UIA)· heartbeat.ts · correlate.ts(纯)
-├── pty/            分屏面板(可选依赖 node-pty + @xterm/headless):pane.ts · manager.ts · render.ts · integration.ts
-└── actions.ts      聚焦 / 复制命令 / attach 命令构造
-integrations/       pi 心跳扩展 · Claude Code 心跳钩子
-scripts/            windows.ps1(枚举进程与标签)· focus.ps1(选中标签 + 置前)
+├── cli.ts              命令入口(TUI / list / doctor / focus)
+├── tui.ts              交互循环:按键、3 秒刷新、拓展加载、attach(挂起/恢复终端)
+├── tui-view.ts         纯渲染:状态 → 屏幕行(CJK 宽度、视口、配色)
+├── tui-layout.ts       主体区:列表行 + 详情或(拓展接管的)自定义内容
+├── tui-screen.ts       屏幕生命周期:备用屏 · 顺序重绘 · 挂起/恢复 · 刷新计时器
+├── tui-keys.ts         按键分发 · tui-context.ts 状态→上下文 · keys.ts 原始输入解析
+├── extensions.ts       拓展接口与加载器(默认加载 tui-panes)
+├── tui-extension-ctx.ts 传给拓展的上下文(会话信息含恢复命令 + 尺寸 + 提示)
+├── model.ts            数据模型
+├── fuzzy.ts            模糊匹配与排序(纯)
+├── format.ts           列表与状态格式化(纯)
+├── text.ts             显示宽度/补齐/截断/ANSI 处理(纯)
+├── scan/               会话采集:pi / claude / opencode / io(头尾读 + 流式标记扫描)
+├── live/               活体:windows(进程 + WT 标签,经 PowerShell/UIA)· heartbeat · correlate(纯)
+├── tui-attach.ts       整屏接管流程(交出终端 → 前台运行 → 收回)
+└── actions.ts          聚焦 / 复制命令 / attach 命令构造
+integrations/           pi 心跳扩展 · Claude Code 心跳钩子
+scripts/                windows.ps1(枚举进程与标签)· focus.ps1(选中标签 + 置前)
 ```
 
 **活性优先级**:心跳(sessionId 精确)→ 标签标题(可定位标签,支持聚焦)→ 启动时间相关性(±90 秒兜底)。

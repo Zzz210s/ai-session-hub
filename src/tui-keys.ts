@@ -7,11 +7,14 @@ import type { FilterKind } from "./tui-view.ts";
 
 export type ActionKind = "smart" | "attach" | "focus" | "copy";
 
-/** 分屏相关操作(由 TUI 注入) */
-export interface PaneOps {
-	open(): void | Promise<void>;
-	cycle(): void;
-	close(): void;
+/**
+ * 拓展键钩子:核心只负责把按键交给拓展(如 tui-panes 的分屏),不关心其语义。
+ * 返回 true 表示该按键已由拓展消费。
+ */
+export interface ExtensionKeys {
+	handle(key: KeyName): boolean | Promise<boolean>;
+	/** 底部提示片段(拓展自己声明) */
+	hints(): string[];
 }
 
 export interface KeyContext {
@@ -24,8 +27,8 @@ export interface KeyContext {
 	jumpTo(position: "top" | "bottom"): void;
 	setFilter(kind: FilterKind): void;
 	act(kind: ActionKind): void | Promise<void>;
-	/** 分屏操作(未启用分屏时可传空实现) */
-	panes: PaneOps;
+	/** 拓展按键入口(可无) */
+	extensions?: ExtensionKeys;
 	refresh(): void | Promise<void>;
 	quit(): void;
 	redraw(): void;
@@ -34,6 +37,7 @@ export interface KeyContext {
 const FILTERS: FilterKind[] = ["running", "attention", "all", "stored"];
 
 export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> {
+	if (ctx.extensions && (await ctx.extensions.handle(key))) return;
 	// 字符键
 	if (typeof key === "object") {
 		const ch = key.char;
@@ -62,12 +66,6 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 			return;
 		}
 		if (ch === "r") return void ctx.refresh();
-		if (ch === "p") return void ctx.panes.open();
-		if (ch === "x") return ctx.panes.close();
-		if (ch === "	") {
-			ctx.panes.cycle();
-			return;
-		}
 		const digit = "1234".indexOf(ch);
 		if (digit >= 0) {
 			ctx.setFilter(FILTERS[digit]);

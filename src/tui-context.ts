@@ -4,7 +4,7 @@
  */
 
 import type { FilterKind } from "./tui-view.ts";
-import type { ActionKind, KeyContext, PaneOps } from "./tui-keys.ts";
+import type { ActionKind, ExtensionKeys, KeyContext } from "./tui-keys.ts";
 
 export interface UiState {
 	filter: FilterKind;
@@ -22,7 +22,7 @@ export interface ContextDeps {
 	refresh(): void | Promise<void>;
 	quit(): void;
 	redraw(): void;
-	panes: PaneOps;
+	extensions?: ExtensionKeys;
 }
 
 export function createContext(deps: ContextDeps): KeyContext {
@@ -54,7 +54,7 @@ export function createContext(deps: ContextDeps): KeyContext {
 			ui.cursor = 0;
 		},
 		act: deps.act,
-		panes: deps.panes,
+		extensions: deps.extensions,
 		refresh: deps.refresh,
 		quit: deps.quit,
 		redraw: deps.redraw,

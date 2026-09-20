@@ -31,10 +31,11 @@ This tool fills that gap: it discovers sessions you already started, annotates t
 | Liveness | heartbeat registry (exact) > terminal tab title match (locates the tab) > process start time vs session creation time (fallback) |
 | Status annotation | parses the glyph written by pi-tab-status into `*` thinking / `>` running a tool / `\|` waiting / `?` possibly stalled / `x` error / `.` idle; sessions needing you are flagged `!` and can be filtered with `2` |
 | Focus window | selects the matching Windows Terminal tab via UI Automation and brings the window forward |
-| Split panes (optional) | runs the session in an embedded PTY pane next to the list, rendered by a headless terminal emulator — several sessions side by side, fully interactive (engine: [tui-panes](https://github.com/Zzz210s/tui-panes)) |
+| Split panes (**provided by an extension**) | several sessions running side by side in the same page: each pane is a real PTY whose output is emulated and composed into this program (engine: the [tui-panes](https://github.com/Zzz210s/tui-panes) extension) |
 | Hand over terminal (attach) | runs `pi --session <file>` / `claude --resume <id>` in the foreground; this program **fully suspends itself** meanwhile and resumes when the session exits |
 | Copy resume command | one key to put the exact command on your clipboard |
 | Live refresh | 3-second poll; redraws only when the composed screen actually changes |
+| Extensions | the core can be extended (split panes come from the [tui-panes](https://github.com/Zzz210s/tui-panes) extension); the core references no concrete extension and works fine without any |
 
 ## Install & run
 
@@ -77,6 +78,28 @@ ais list --json          # machine-readable (sessionFile / tab / resumeCommand)
 ais doctor               # discovery diagnostics: per-tool counts, live processes, terminal tabs, heartbeats
 ais focus  <query>       # focus a running session's window
 ```
+
+## Extensions (core vs. extension)
+
+**This repository is the core**: session discovery, liveness, annotation, focus/attach/copy, and the TUI shell. **Same-page split panes are provided by an extension** — the core references no concrete extension.
+
+`tui-panes` is loaded by default (used if installed; the core is unaffected when it is missing). Override the list with `AIS_EXTENSIONS=a,b` or `~/.ai-session-hub/extensions.json` (`{"extensions":["tui-panes"]}`).
+
+An extension is a plain module (usually a package/repo) exporting `createHubExtension()`:
+
+| Hook | Purpose |
+|---|---|
+| `name` | extension name (required) |
+| `hints?: string[]` | key hints shown while its view is active |
+| `openSelected?(ctx)` | called by the core's smart Enter action ("open this session in a split pane") |
+| `bodyView?(ctx): string[] \| undefined` | take over the body area (return composed lines); `undefined` keeps the core detail view |
+| `handleKey?(key, ctx): boolean` | its own keys (return `true` when consumed) |
+| `handleRawInput?(text, ctx): boolean` | raw input (so keys reach a focused pane) |
+| `onResize?(ctx)` / `dispose?()` | resize / cleanup |
+
+`ctx` provides `selected(): { id, title, tool, cwd, command, state }` (including the **resume command**, so extensions need no knowledge of core internals), `metrics()`, and `notify/redraw/schedule`.
+
+Available extensions: [tui-panes](https://github.com/Zzz210s/tui-panes) (same-page split panes).
 
 ## Architecture
 

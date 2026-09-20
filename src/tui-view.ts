@@ -11,12 +11,8 @@ export { clampLine, displayWidth, fit, padVisible, sanitizeForDisplay, stripAnsi
 
 export type FilterKind = "running" | "attention" | "all" | "stored";
 
-/** 分屏面板的渲染数据(由 pane 管理器提供) */
-export interface PaneView {
-	title: string;
-	focused: boolean;
-	lines: string[];
-}
+/** 拓展接管主体区时提供的行(已由拓展自行组合好) */
+export type CustomBody = string[];
 
 export interface TuiState {
 	rows: SessionView[];
@@ -30,8 +26,10 @@ export interface TuiState {
 	message?: string;
 	refreshedAt: Date;
 	now: Date;
-	/** 已打开的分屏面板(为空则显示详情视图) */
-	panes?: PaneView[];
+	/** 拓展接管的主体区内容(为空则显示核心的详情视图) */
+	customBody?: CustomBody;
+	/** 拓展声明的底部提示片段 */
+	customHints?: string[];
 }
 
 const RESET = "\u001b[0m";
@@ -96,26 +94,32 @@ function filterBar(state: TuiState): string {
 		.join("  ");
 	const tabsWidth = tabs.map((tab) => displayWidth(tab.label)).reduce((sum, w) => sum + w, 0) + (tabs.length - 1) * 2;
 	const search = state.searchMode ? `${BOLD}搜索: ${state.query}|${RESET}` : `${DIM}搜索: ${state.query || "(按 / 输入)"}${RESET}`;
-	const paneHint = state.panes?.length ? `${FG_GREEN}分屏 ${state.panes.length}${RESET}  ` : "";
-	const pad = Math.max(1, state.width - tabsWidth - displayWidth(stripAnsi(search)) - displayWidth(stripAnsi(paneHint)) - 4);
-	return ` ${rendered}${" ".repeat(pad)}${paneHint}${search} `;
+	const extHint = state.customHints?.length ? `${FG_GREEN}${state.customHints.join(" · ")}${RESET}  ` : "";
+	const pad = Math.max(1, state.width - tabsWidth - displayWidth(stripAnsi(search)) - displayWidth(stripAnsi(extHint)) - 4);
+	return ` ${rendered}${" ".repeat(pad)}${extHint}${search} `;
 }
 
 /** 底部按键提示(分屏聚焦时不同) */
 function footerText(state: TuiState): string {
-	const paneFocused = state.panes?.some((pane) => pane.focused);
-	if (paneFocused) return "面板已聚焦:按键直达会话 | Ctrl+Q 回到列表 | Ctrl+W 关闭面板";
-	return "Enter 分屏打开 | a 接管终端 | f 聚焦窗口 | c 复制 | Tab 切换面板 | 1-4 筛选 | / 搜索 | q 退出";
+	// 拓展可以在 message 里给出自己的引导(如"面板已聚焦"),这里只保留核心键位
+	const core = "Enter 打开 | a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出";
+	return state.customBody ? `${core}(拓展提供更多操作)` : core;
 }
 
-/** 布局尺寸(渲染与分屏面板共用,避免两处公式漂移) */
-export function layoutMetrics(state: TuiState): { width: number; height: number; leftWidth: number; rightWidth: number; bodyHeight: number } {
-	// 末列留白:写满整行会让终端进入"折行挂起",ConPTY 下会把后续光标定位弄乱
-	const width = Math.max(40, state.width - 1);
-	const height = Math.max(10, state.height);
-	const paneMode = Boolean(state.panes?.length);
-	const leftWidth = paneMode ? Math.min(38, Math.max(24, Math.floor(width * 0.28))) : Math.min(52, Math.max(30, Math.floor(width * 0.45)));
+/**
+ * 布局尺寸:由 (终端宽高, 是否拓展接管主体区) 决定,不依赖 TuiState ——
+ * 这样拓展询问"我能用多大空间"时不会反过来触发主体区渲染(否则会无限递归)。
+ */
+export function layoutMetricsFor(widthInput: number, heightInput: number, extensionMode: boolean): LayoutMetrics {
+	const width = Math.max(40, widthInput - 1); // 末列留白,避免折行挂起
+	const height = Math.max(10, heightInput);
+	const leftWidth = extensionMode ? Math.min(38, Math.max(24, Math.floor(width * 0.28))) : Math.min(52, Math.max(30, Math.floor(width * 0.45)));
 	return { width, height, leftWidth, rightWidth: Math.max(20, width - leftWidth - 2), bodyHeight: Math.max(3, height - 3) };
+}
+
+/** 由 TuiState 推导布局尺寸 */
+export function layoutMetrics(state: TuiState): LayoutMetrics {
+	return layoutMetricsFor(state.width, state.height, Boolean(state.customBody?.length));
 }
 
 /** 渲染整屏(返回行数组,调用方负责输出与刷新) */

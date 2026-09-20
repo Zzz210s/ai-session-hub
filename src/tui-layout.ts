@@ -16,32 +16,6 @@ const FG_GREEN = "\u001b[38;5;114m";
 const FG_YELLOW = "\u001b[38;5;179m";
 const FG_RED = "\u001b[38;5;203m";
 
-/**
- * 面板合成(与 tui-panes 的 composePanes 同语义的本地实现)
- * 核心不做硬依赖:即使未安装 tui-panes,渲染层也能把面板帧排好。
- */
-interface PaneFrame {
-	title: string;
-	lines: string[];
-	focused: boolean;
-}
-
-function composePanes(frames: PaneFrame[], width: number, height: number): string[] {
-	if (frames.length === 0) return Array.from({ length: height }, () => " ".repeat(width));
-	const perPane = Math.floor(height / frames.length);
-	const out: string[] = [];
-	for (const [index, frame] of frames.entries()) {
-		const isLast = index === frames.length - 1;
-		const rows = isLast ? height - perPane * index : perPane;
-		const label = `${frame.focused ? "*" : " "} ${frame.title}`;
-		const fitted = label.length > width ? `${label.slice(0, Math.max(0, width - 1))}~` : label;
-		out.push(`${REVERSE}${fitted.padEnd(width)}${RESET}`);
-		for (let row = 1; row < rows; row++) out.push(frame.lines[row - 1] ?? "");
-	}
-	while (out.length < height) out.push("");
-	return out.slice(0, height);
-}
-
 function statusGlyph(view: SessionView): string {
 	if (view.attention) return "!";
 	if (view.state !== "running") return " ";
@@ -93,21 +67,19 @@ export function detailLines(view: SessionView | undefined, rightWidth: number, s
 	for (const [label, value] of fields) {
 		lines.push(` ${DIM}${fit(label, 10)}${RESET}${fit(sanitizeForDisplay(value), Math.max(4, rightWidth - 12))}`);
 	}
-	if (!state.panes?.length) {
-		lines.push("", ` ${DIM}Enter 在分屏中打开该会话 | a 接管整个终端${RESET}`);
+	if (!state.customBody?.length) {
+		lines.push("", ` ${DIM}Enter 打开该会话(装了拓展则在拓展视图里打开)| a 接管整个终端${RESET}`);
 	}
 	return lines;
 }
 
 /** 右侧内容:分屏面板优先,否则显示选中会话详情 */
 function rightLines(state: TuiState, rightWidth: number, bodyHeight: number): string[] {
-	if (state.panes?.length) {
-		const frames: PaneFrame[] = state.panes.map((pane) => ({
-			title: pane.title,
-			focused: pane.focused,
-			lines: pane.lines.map((line) => padVisible(line, rightWidth)),
-		}));
-		return composePanes(frames, rightWidth, bodyHeight);
+	// 拓展接管时用它的内容(逐行按可见宽度补齐/截断),否则显示核心的详情视图
+	if (state.customBody?.length) {
+		const lines = state.customBody.map((line) => clampLine(padVisible(line, rightWidth), rightWidth));
+		while (lines.length < bodyHeight) lines.push("");
+		return lines.slice(0, bodyHeight);
 	}
 	return detailLines(state.rows[state.cursor], rightWidth, state);
 }

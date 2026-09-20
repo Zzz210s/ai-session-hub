@@ -1,18 +1,18 @@
 /**
- * 交互式 TUI:会话看板 + 分屏面板
- *   渲染 tui-view.ts/tui-layout.ts · 屏幕与挂起 tui-screen.ts · 按键 keys.ts/tui-keys.ts/tui-context.ts
- *   分屏引擎 panes.ts(可选依赖 tui-panes)· 整屏接管 tui-attach.ts
+ * 交互式 TUI:核心=会话总览,同页分屏等能力由拓展提供(src/extensions.ts)。
+ * 渲染 tui-view.ts/tui-layout.ts · 屏幕 tui-screen.ts · 按键 keys/tui-keys/tui-context
  */
 
 import type { SessionView } from "./model.ts";
-import { copyResumeCommand, focusSession } from "./actions.ts";
-import { parseKeys } from "./keys.ts";
+import { copyResumeCommand, focusSession, resumeCommand } from "./actions.ts";
+import { parseKeys, type KeyName } from "./keys.ts";
 import { dispatchKey, type ActionKind } from "./tui-keys.ts";
 import { createContext } from "./tui-context.ts";
 import { createTuiScreen } from "./tui-screen.ts";
-import { createLazyPanes } from "./panes.ts";
 import { runAttach } from "./tui-attach.ts";
-import { filterRows, layoutMetrics, renderScreen, stripAnsi, totalsOf, type FilterKind, type TuiState } from "./tui-view.ts";
+import { loadExtensions, type ExtensionContext, type HubExtension } from "./extensions.ts";
+import { createExtensionContext } from "./tui-extension-ctx.ts";
+import { filterRows, renderScreen, stripAnsi, totalsOf, type FilterKind, type TuiState } from "./tui-view.ts";
 
 const REFRESH_MS = 3000;
 const ESCAPE_WAIT_MS = 40;
@@ -21,6 +21,8 @@ const REDRAW_THROTTLE_MS = 80;
 export interface TuiOptions {
 	load: () => Promise<SessionView[]>;
 	filter?: FilterKind;
+	/** 要加载的拓展(默认:环境变量/配置文件/内置默认列表) */
+	extensions?: string[];
 }
 
 export async function runTui(options: TuiOptions): Promise<void> {
@@ -38,8 +40,15 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	let drawTimer: ReturnType<typeof setTimeout> | null = null;
 	let done: () => void = () => {};
 
+	/** 已加载的拓展(加载失败只提示,不影响核心) */
+	const loaded = await loadExtensions(options.extensions);
+	const extensions: HubExtension[] = loaded.filter((entry) => !entry.error).map((entry) => entry.extension);
+	const failures = loaded.filter((entry) => entry.error);
+
 	const computeState = (): TuiState => {
 		const rows = filterRows(allRows, ui.filter, ui.query);
+		const body = extensions.map((extension) => extension.bodyView?.(extCtx)).find((value) => value && value.length);
+		const hints = extensions.flatMap((extension) => extension.hints ?? []);
 		return {
 			rows,
 			totals: totalsOf(allRows),
@@ -52,7 +61,8 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			message,
 			refreshedAt: new Date(),
 			now: new Date(),
-			panes: panesLazy.current()?.snapshots(),
+			customBody: body,
+			customHints: body && hints.length ? hints : undefined,
 		};
 	};
 
@@ -75,7 +85,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		stdout,
 		onData: (chunk) => handleChunk(chunk),
 		onResize: () => {
-			panesLazy.current()?.syncSize();
+			for (const extension of extensions) extension.onResize?.(extCtx);
 			draw(true);
 		},
 	});
@@ -93,27 +103,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		return state.rows[state.cursor];
 	};
 
-	/** 分屏引擎:tui-panes 为可选依赖,首次使用时才导入 */
-	const panesLazy = createLazyPanes(
-		{
-			selected,
-			metrics: () => {
-				const metrics = layoutMetrics(computeState());
-				return { rightWidth: metrics.rightWidth, bodyHeight: metrics.bodyHeight };
-			},
-			redraw: () => draw(true),
-			schedule: scheduleDraw,
-			notify: (text) => (message = text),
-		},
-		(text) => {
-			message = text;
-			draw(true);
-		},
-		() => draw(true),
-	);
-
-	const attach = (view: SessionView): Promise<void> =>
-		runAttach(screen, view, { reload, notify: (text) => (message = text), redraw: () => draw(true) });
+	const attach = (view: SessionView): Promise<void> => runAttach(screen, view, { reload, notify: extCtx.notify, redraw: extCtx.redraw });
 
 	const act = async (kind: ActionKind): Promise<void> => {
 		const view = selected();
@@ -126,29 +116,39 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		} else if (view.state === "running" && view.live?.tab) {
 			message = (await focusSession(view)).detail;
 		} else {
-			// 历史会话:默认在分屏里打开(不占整屏,可同时看多个)
-			const engine = await panesLazy.ensure();
-			if (!engine) return;
-			return engine.open();
+			// 历史会话:交给拓展(如分屏)打开;没有拓展时提示可用 a 接管
+			const opener = extensions.find((extension) => extension.openSelected);
+			if (opener?.openSelected) await opener.openSelected(extCtx);
+			else message = "当前没有可打开该会话的拓展(按 a 可接管终端继续)";
 		}
 		draw(true);
 	};
 
 	const move = (delta: number): void => {
-		const total = computeState().rows.length;
-		ui.cursor = Math.max(0, Math.min(total - 1, computeState().cursor + delta));
+		ui.cursor = Math.max(0, Math.min(computeState().rows.length - 1, computeState().cursor + delta));
 		draw(true);
 	};
+
+	/** 传给拓展的上下文(会话信息含恢复命令 + 尺寸 + 提示/重绘) */
+	const extCtx: ExtensionContext = createExtensionContext({
+		selected,
+		size: () => ({ width: stdout.columns ?? 120, height: stdout.rows ?? 30 }),
+		notify: (text) => (message = text),
+		redraw: () => draw(true),
+		schedule: () => scheduleDraw(),
+	});
 
 	const context = createContext({
 		ui,
 		rowCount: () => computeState().rows.length,
 		move,
 		act,
-		panes: {
-			open: () => panesLazy.withPanes((engine) => engine.open()),
-			cycle: () => panesLazy.withPanes((engine) => engine.cycle()),
-			close: () => panesLazy.withPanes((engine) => engine.close()),
+		extensions: {
+			handle: async (key: KeyName) => {
+				for (const extension of extensions) if (await extension.handleKey?.(key, extCtx)) return true;
+				return false;
+			},
+			hints: () => extensions.flatMap((extension) => extension.hints ?? []),
 		},
 		refresh: async () => {
 			message = "手动刷新…";
@@ -161,9 +161,12 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
 	/** 按键分片安全:未完成的转义序列先缓冲,单独的 ESC 短暂等待后按退出处理 */
 	function handleChunk(chunk: Buffer): void {
-		// 面板聚焦时,按键直接转发给该会话(仅保留 Ctrl+Q/Ctrl+W 两个逃生键)
-		if (panesLazy.current()?.handleFocusedInput(chunk.toString("utf8"))) return;
-		inputBuffer += chunk.toString("utf8");
+		const text = chunk.toString("utf8");
+		// 拓展优先处理原始输入(分屏聚焦时按键要直达会话)
+		for (const extension of extensions) {
+			if (extension.handleRawInput?.(text, extCtx)) return;
+		}
+		inputBuffer += text;
 		const { keys, rest } = parseKeys(inputBuffer);
 		inputBuffer = rest;
 		for (const key of keys) void dispatchKey(key, context);
@@ -179,6 +182,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
 	screen.enter();
 	await reload();
+	if (failures.length) message = `拓展加载失败: ${failures.map((entry) => `${entry.name}(${entry.error})`).join("; ")}`;
 	draw(true);
 	screen.startTicker(() => {
 		void reload().then(() => draw());
@@ -188,7 +192,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		done = (): void => {
 			if (escapeTimer) clearTimeout(escapeTimer);
 			if (drawTimer) clearTimeout(drawTimer);
-			panesLazy.current()?.dispose();
+			for (const extension of extensions) extension.dispose?.();
 			screen.leave(message || "已退出");
 			resolve();
 		};
