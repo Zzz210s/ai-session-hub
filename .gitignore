@@ -13,6 +13,5 @@ CLAUDE.md
 .aider*
 docs/specs/
 
-# 本机运行时数据(心跳注册表)
+# 本机运行时数据(心跳注册表);注意不要用裸 live/ —— 会连 src/live/ 源码一起忽略
 .ai-sessions/
-live/
