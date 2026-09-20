@@ -130,6 +130,13 @@ Liveness priority: heartbeat (exact session id) → tab title (locates the tab, 
 
 ## Development notes (learned the hard way)
 
+Working on both this repo and the [tui-panes](https://github.com/Zzz210s/tui-panes) extension? Link the local checkout so edits to the extension take effect immediately (nothing is written to `package.json` or the lock file):
+
+```bash
+npm run dev:link -- ../tui-panes     # path to your local tui-panes checkout
+npm test
+```
+
 1. **ConPTY rewrites absolute cursor positioning.** Writing per-line `cursorTo(row, col)` makes ConPTY re-emit the stream as text flow, garbling the screen. Redraw sequentially: `\x1b[H` + lines joined with `\r\n` + `\x1b[J`.
 2. **Leave the last column empty** and never fill the terminal width exactly ("pending wrap" breaks subsequent positioning).
 3. **Use ASCII in your own chrome.** Ambiguous-width glyphs (`◐ ▸ · × …`) are rendered double-width by some terminals/fonts, shifting every column; data is sanitized before display.

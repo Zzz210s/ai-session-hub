@@ -14,7 +14,8 @@
     "list": "node src/cli.ts list",
     "doctor": "node src/cli.ts doctor",
     "tui": "node src/cli.ts",
-    "panes": "node -e \"import('tui-panes').then(()=>console.log('tui-panes 可用')).catch(e=>console.log('未安装:', e.message))\""
+    "panes": "node -e \"import('tui-panes').then(()=>console.log('tui-panes 可用')).catch(e=>console.log('未安装:', e.message))\"",
+    "dev:link": "npm install --no-save --no-package-lock"
   },
   "keywords": [
     "ai",

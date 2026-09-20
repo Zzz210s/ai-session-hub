@@ -125,7 +125,7 @@ scripts/                windows.ps1(枚举进程与标签)· focus.ps1(选中标
 | 会话发现 | 数十个会话,覆盖 pi / Claude / opencode 三种存储格式 |
 | 活性判定 | 运行中的会话全部匹配到终端标签序号与状态字形 |
 | 聚焦窗口 | 经 UI Automation 选中标签并置前,多次实测成功 |
-| 分屏面板(可选) | node-pty + @xterm/headless:面板内渲染会话真实输出,可交互;见 [tui-panes](https://github.com/Zzz210s/tui-panes) |
+| 分屏面板(**由拓展提供**) | 同页并排运行多个会话,每格是真实 PTY,输出经终端仿真渲染;见拓展 [tui-panes](https://github.com/Zzz210s/tui-panes) |
 | TUI 渲染 | 用真实终端模拟器逐尺寸核对(80/100/120/226 列),无折行错位 |
 | 单测 | `node --test test/*.test.js` 全部通过(采集解析 / 合并 / 格式化 / 模糊匹配 / 渲染 / 按键 / 屏幕挂起) |
 | 启动耗时 | 全量扫描约 1 秒 |
@@ -141,6 +141,15 @@ scripts/                windows.ps1(枚举进程与标签)· focus.ps1(选中标
 1. Zed(`db.sqlite` sidebar_threads)与 Gemini/Antigravity(`brain/<id>/`)采集
 2. 会话备注/标签/归档;额度面板;hook 驱动的秒级刷新
 3. 分屏:可拖拽调整面板比例、面板内滚动回看(引擎见 [tui-panes](https://github.com/Zzz210s/tui-panes))
+
+## 开发
+
+同时改本仓库与 [tui-panes](https://github.com/Zzz210s/tui-panes) 时,把本地检出的拓展链进来,改完立刻生效(不写 `package.json` 与 lock 文件):
+
+```bash
+npm run dev:link -- ../tui-panes     # 指向你本地的 tui-panes 目录(改它的源码后需先 npm run build)
+npm test                             # 核心逻辑单测
+```
 
 ## License
 
