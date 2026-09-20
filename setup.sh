@@ -65,12 +65,17 @@ else
 fi
 
 # --- 3. ais 命令 ---
+# 解析仓库真实路径(去掉 junction / symlink):即使以后删掉 ~ 下的便捷链接,
+# 启动器仍指向真正的开发环境
+REPO_REAL="$(cd "$REPO_DIR" && pwd -P)"
 if [ -d "$HOME/bin" ]; then
-  printf '#!/usr/bin/env bash\nexec node --no-warnings "%s/src/cli.ts" "$@"\n' "$REPO_DIR" > "$HOME/bin/ais"
+  printf '#!/usr/bin/env bash\nexec node --no-warnings "%s/src/cli.ts" "$@"\n' "$REPO_REAL" > "$HOME/bin/ais"
   chmod +x "$HOME/bin/ais"
-  # PowerShell / cmd 启动器(非 Git Bash 环境)
-  cp "$REPO_DIR/bin/ais.cmd" "$HOME/bin/ais.cmd"
-  cp "$REPO_DIR/bin/ais.ps1" "$HOME/bin/ais.ps1"
+  # PowerShell / cmd 启动器:写绝对仓库路径(拷贝自仓库的 bin/ 版本会以 ~/bin/.. 推断,
+  # 指向用户目录而不是仓库——两者都会写坏路径,所以这里生成)
+  REPO_WIN="$(cygpath -w "$REPO_REAL" 2>/dev/null || printf '%s' "$REPO_REAL")"
+  printf '@echo off\r\nnode --no-warnings "%s\\src\\cli.ts" %%*\r\n' "$REPO_WIN" > "$HOME/bin/ais.cmd"
+  printf '& node --no-warnings "%s\\src\\cli.ts" @args\n' "$REPO_WIN" > "$HOME/bin/ais.ps1"
   log "已安装命令: $HOME/bin/ais(bash)· ais.cmd / ais.ps1(PowerShell/cmd)"
 else
   log "用法: node $REPO_DIR/src/cli.ts [list|doctor|focus <查询>];TUI 直接运行 ais"
