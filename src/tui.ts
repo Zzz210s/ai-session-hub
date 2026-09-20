@@ -64,7 +64,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			now: new Date(),
 			color: supportsColor(process.env, Boolean(stdout.isTTY)),
 			customBody: body,
-			customHints: body && hints.length ? hints : undefined,
+			customHints: hints.length ? hints : undefined,
 		};
 	};
 
@@ -121,7 +121,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			// 历史会话:交给拓展(如分屏)打开;没有拓展时提示可用 a 接管
 			const opener = extensions.find((extension) => extension.openSelected);
 			if (opener?.openSelected) await opener.openSelected(extCtx);
-			else message = "当前没有可打开该会话的拓展(按 a 可接管终端继续)";
+			else message = "该会话未运行:按 a 接管终端继续";
 		}
 		draw(true);
 	};

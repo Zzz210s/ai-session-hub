@@ -60,7 +60,7 @@ npm install          # installs tui-panes (optionalDependency)
 | Key | Action |
 |---|---|
 | `↑` `↓` / `j` `k` / `ctrl+p` `ctrl+n` | move the cursor (the selected row is highlighted full-width); `PageUp`/`PageDown` page, `Home`/`End` jump |
-| `Enter` | smart: running session → focus its window; historical → open in a **split pane** |
+| `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
 | `a` | hand the terminal over to the session (attach); exits back to the board when the session ends |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
@@ -162,6 +162,8 @@ An extension is a plain module (usually a package/repo) exporting `createHubExte
 `ctx` provides `selected(): { id, title, tool, cwd, command, state }` (including the **resume command**, so extensions need no knowledge of core internals), `metrics()`, and `notify/redraw/schedule`.
 
 Available extensions: [tui-panes](https://github.com/Zzz210s/tui-panes) (same-page split panes).
+
+**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
 
 ## Architecture
 

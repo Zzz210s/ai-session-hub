@@ -102,10 +102,10 @@ function filterBar(state: TuiState): string {
 }
 
 /** 底部按键提示(分屏聚焦时不同) */
-function footerText(state: TuiState): string {
-	// 拓展可以在 message 里给出自己的引导(如"面板已聚焦"),这里只保留核心键位
-	const core = "Enter 打开 | a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出";
-	return state.customBody ? `${core}(拓展提供更多操作)` : core;
+function footerText(): string {
+	// 只列核心键位:Enter 的行为取决于会话状态与是否装了拓展,故不在此承诺;
+	// 拓展自己的键位由拓展通过 hints 提供(见 filterBar),无拓展时不出现任何拓展字样
+	return "a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出";
 }
 
 /**
@@ -134,7 +134,7 @@ export function renderScreen(state: TuiState): string[] {
 		lines[2] = ` ${DIM}没有匹配的会话(试试 3 全部 / 清空搜索)${RESET}`;
 	}
 
-	const hint = footerText(state);
+	const hint = footerText();
 	const footer = state.message ? `${state.message}  |  ${hint}` : hint;
 	lines.push(` ${DIM}${fit(footer, Math.max(0, width - 2))}${RESET}`);
 	return lines.slice(0, height).map((line) => clampLine(line, width));

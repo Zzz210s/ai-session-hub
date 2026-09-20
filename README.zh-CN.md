@@ -154,6 +154,8 @@ export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 现有拓展:[tui-panes](https://github.com/Zzz210s/tui-panes)(同页分屏)。
 
+**没装拓展就完全不出现拓展相关字样**:未加载任何拓展时,界面里不会出现"拓展/分屏/面板"等字样,底部只列核心键位;此时对历史会话按 Enter 只会提示"该会话未运行:按 a 接管终端继续"。拓展自己的键位提示(如 `Enter 分屏打开`)只在真正加载了拓展后才显示。
+
 ## 架构
 
 ```

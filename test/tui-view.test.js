@@ -70,7 +70,7 @@ test("renderScreen:包含标题栏、统计、筛选、会话行与提示", () =
 	assert.match(text[1], /1 运行中 1/);
 	assert.match(text.join("\n"), /运行中的/);
 	assert.match(text.join("\n"), /历史的/);
-	assert.match(text[text.length - 1], /Enter 打开/);
+	assert.match(text[text.length - 1], /a 接管终端/);
 	assert.equal(lines.length, 20);
 });
 
@@ -94,4 +94,19 @@ test("renderScreen:搜索态与消息展示", () => {
 	const text = lines.map(stripAnsi).join("\n");
 	assert.match(text, /搜索: config/);
 	assert.match(text, /已复制命令/);
+});
+
+test("renderScreen:未装拓展时界面不出现任何拓展相关内容", () => {
+	const plain = state(); // 该夹具不带 customHints / customBody
+	const text = stripAnsi(renderScreen(plain).join("\n"));
+	assert.ok(!text.includes("拓展"), "不应出现'拓展'字样");
+	assert.ok(!text.includes("分屏"), "不应出现'分屏'字样");
+	assert.ok(!text.includes("面板"), "不应出现'面板'字样");
+	assert.ok(!text.includes("Enter"), "footer 不再承诺 Enter(其行为取决于状态与拓展)");
+});
+
+test("renderScreen:装了拓展时展示拓展自己的键位提示", () => {
+	const withHints = { ...state(), customHints: ["Enter 分屏打开"] };
+	const text = stripAnsi(renderScreen(withHints).join("\n"));
+	assert.ok(text.includes("Enter 分屏打开"), "应展示拓展键位");
 });
