@@ -1,0 +1,37 @@
+name: test
+
+# 只跑跨平台可跑的部分:单元测试 + 脚本语法检查。
+# Windows 专属能力(UIA 标签聚焦、系统回收站、ConPTY)在 CI 里无法覆盖,
+# 那部分靠本机 PTY 端到端验证(见 README 的验证章节)。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: 单元测试
+        run: node --test test/*.test.js
+
+      - name: shell 语法检查
+        run: bash -n setup.sh
+
+      - name: 检查是否误提交本机路径/密钥
+        run: |
+          set -e
+          # 仓库是公开的:不应出现本机用户名、家目录绝对路径或任何 token
+          if grep -rnE "C:\\\\Users\\\\[A-Za-z0-9]+|/Users/[a-z0-9]+/|(sk-|ghp_|npm_)[A-Za-z0-9_-]{16,}" \
+               --include='*.ts' --include='*.js' --include='*.mjs' --include='*.json' --include='*.md' --include='*.ps1' --include='*.sh' .; then
+            echo "::error::发现本机路径或疑似密钥"
+            exit 1
+          fi
+          echo "无本机路径/密钥 ✓"

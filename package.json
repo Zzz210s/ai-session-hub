@@ -1,7 +1,7 @@
 {
   "name": "ai-session-hub",
-  "version": "0.3.0",
-  "description": "主机级 AI 会话总览与跳转:TUI 一览 pi/Claude/opencode 的运行中与历史会话,聚焦窗口或在分屏面板中继续",
+  "version": "0.5.0",
+  "description": "主机级 AI 会话总览与跳转:TUI 一览 pi/Claude/opencode 的运行中与历史会话 —— 聚焦窗口、接管终端、分屏继续(拓展提供)、删除会话(入系统回收站)",
   "type": "module",
   "bin": {
     "ais": "./src/cli.ts"
