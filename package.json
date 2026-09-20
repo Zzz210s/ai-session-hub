@@ -22,7 +22,11 @@
     "session-manager",
     "tui",
     "windows-terminal",
-    "uiautomation"
+    "uiautomation",
+    "claude-code",
+    "opencode",
+    "session-overview",
+    "recycle-bin"
   ],
   "author": "Zzz210s",
   "license": "MIT",
