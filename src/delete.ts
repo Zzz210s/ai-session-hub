@@ -14,6 +14,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import type { SessionView } from "./model.ts";
 import { liveDir } from "./live/heartbeat.ts";
+import { canRecycleToSystem, recycleToSystem, type RecycleResult } from "./recycle.ts";
 import { title } from "./format.ts";
 
 export interface DeletePlan {
@@ -25,8 +26,8 @@ export interface DeletePlan {
 	path?: string;
 	/** 需要一并清理的心跳记录文件 */
 	heartbeatFiles?: string[];
-	/** 删除方式 */
-	mode?: "trash" | "db";
+	/** 删除方式:recycle = 系统回收站,trash = 内部回收目录 */
+	mode?: "recycle" | "trash" | "db";
 }
 
 export function trashDir(): string {
@@ -34,10 +35,14 @@ export function trashDir(): string {
 }
 
 export interface DeleteOptions {
-	/** 回收目录(默认 ~/.ai-session-hub/trash) */
+	/** 内部回收目录(系统回收站不可用时的退路;默认 ~/.ai-session-hub/trash) */
 	trashDir?: string;
 	/** 心跳注册表目录(默认 ~/.ai-sessions/live;单测注入临时目录) */
 	liveDirectory?: string;
+	/** 送入系统回收站的方式(默认 Windows 回收站;单测注入假实现) */
+	recycle?: (path: string) => Promise<RecycleResult>;
+	/** 是否允许使用系统回收站(默认按平台判断) */
+	allowSystemRecycle?: boolean;
 }
 
 /** 找出该会话残留的心跳记录(按 sessionId 匹配) */
@@ -78,7 +83,7 @@ export async function planDelete(view: SessionView, options: DeleteOptions = {})
 	}
 	return {
 		supported: true,
-		mode: "trash",
+		mode: (options.allowSystemRecycle ?? canRecycleToSystem()) ? "recycle" : "trash",
 		path: view.file,
 		heartbeatFiles: await heartbeatFilesFor(view, options.liveDirectory ?? liveDir()),
 	};
@@ -94,15 +99,32 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 	const plan = await planDelete(view, options);
 	if (!plan.supported || !plan.path) return { ok: false, detail: plan.reason ?? "不可删除" };
 
-	const dir = options.trashDir ?? trashDir();
-	await mkdir(dir, { recursive: true });
-	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const target = join(dir, `${stamp}__${view.tool}__${basename(plan.path)}`);
-	try {
-		await rename(plan.path, target);
-	} catch (error) {
-		// 跨盘或占用时退化为复制+删除由调用方感知:这里只报错
-		return { ok: false, detail: `移入回收失败: ${error instanceof Error ? error.message : String(error)}` };
+	// 1) 优先送系统回收站(用户可在资源管理器里还原)
+	const useSystem = options.allowSystemRecycle ?? canRecycleToSystem();
+	let how = "";
+	let fallbackNote = "";
+	if (useSystem) {
+		const recycle = options.recycle ?? recycleToSystem;
+		const result = await recycle(plan.path);
+		if (result.ok) {
+			how = "已放入系统回收站(可在资源管理器还原)";
+		} else {
+			fallbackNote = `(系统回收站不可用:${result.detail ?? "未知原因"})`;
+		}
+	}
+
+	// 2) 退路:移入内部回收目录(同样可恢复)
+	if (!how) {
+		const dir = options.trashDir ?? trashDir();
+		await mkdir(dir, { recursive: true });
+		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const target = join(dir, `${stamp}__${view.tool}__${basename(plan.path)}`);
+		try {
+			await rename(plan.path, target);
+		} catch (error) {
+			return { ok: false, detail: `移入回收目录失败: ${error instanceof Error ? error.message : String(error)}` };
+		}
+		how = `移入回收目录 ${dir}${fallbackNote}`;
 	}
 
 	let cleaned = 0;
@@ -115,5 +137,5 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 		}
 	}
 	const heartbeatNote = cleaned > 0 ? `,并清理 ${cleaned} 条心跳记录` : "";
-	return { ok: true, detail: `已删除「${title(view)}」:移入 ${dir}${heartbeatNote}(可在该目录恢复)` };
+	return { ok: true, detail: `已删除「${title(view)}」:${how}${heartbeatNote}` };
 }

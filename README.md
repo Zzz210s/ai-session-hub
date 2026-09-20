@@ -252,3 +252,30 @@ npm test
 ## License
 
 MIT
+
+## Performance
+
+Everything is cached on disk under `~/.ai-session-hub/cache/`, keyed by file fingerprints, so repeat runs are cheap:
+
+| Operation | Cold | Warm |
+|---|---|---|
+| `ais list` (71 sessions, live probe) | ~4.6 s | **~0.25 s** |
+| TUI first frame / list ready | ~1.2 s / ~2.2 s | ~1.2 s / ~2.2 s |
+
+What made it slow, and what was fixed:
+
+1. **UIA enumerated every top-level window** (`TrueCondition`) while probing Windows Terminal tabs — each child property read is a cross-process call, so the probe took ~15 s. It now filters by window class server-side: **~1.3 s**.
+2. **`Get-CimInstance Win32_Process` without a server-side filter** transferred ~350 rows; it now filters by process name.
+3. **Nothing was cached** — the TUI re-ran the whole probe every 3 s. Now: live probe cached for 8 s (`AIS_LIVE_TTL_MS`; the TUI uses 15 s), and per-file parse results cached by size+mtime (`AIS_SCAN_TTL_MS`, default 24 h).
+4. **The TUI waited for the first load before painting** — it now paints immediately ("正在探测会话…") and fills in when the load lands.
+
+Cache controls:
+
+```bash
+ais list --no-cache        # bypass both caches once
+AIS_CACHE=0 ais            # disable caching entirely
+AIS_LIVE_TTL_MS=3000       # live probe TTL (0 = always probe)
+AIS_SCAN_TTL_MS=0          # disable the per-file scan cache
+rm -rf ~/.ai-session-hub/cache   # clear
+```
+

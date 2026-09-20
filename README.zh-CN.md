@@ -236,3 +236,30 @@ npm test                             # 核心逻辑单测
 ## License
 
 MIT
+
+## 性能
+
+结果都缓存在 `~/.ai-session-hub/cache/`,按文件指纹失效,因此重复运行很便宜:
+
+| 操作 | 冷启动 | 热启动 |
+|---|---|---|
+| `ais list`(71 个会话 + 活体探测) | ~4.6 s | **~0.25 s** |
+| TUI 首帧 / 列表就绪 | ~1.2 s / ~2.2 s | 同左 |
+
+慢在哪、改了什么:
+
+1. **探测 Windows Terminal 标签时用 `TrueCondition` 枚举了所有顶层窗口** —— 每个子元素的属性读取都是跨进程调用,探测因此要 ~15 s。改为按窗口类做服务端过滤:**~1.3 s**。
+2. **`Get-CimInstance Win32_Process` 没做服务端过滤**,一次传 ~350 行;改为按进程名过滤。
+3. **完全没有缓存** —— TUI 每 3 秒重跑一次完整探测。现在:活体探测缓存 8 秒(`AIS_LIVE_TTL_MS`,TUI 用 15 秒),单文件解析结果按 size+mtime 缓存(`AIS_SCAN_TTL_MS`,默认 24 小时)。
+4. **TUI 要先加载完才画第一帧** —— 现在立即出界面("正在探测会话…"),加载完再填内容。
+
+缓存开关:
+
+```bash
+ais list --no-cache        # 本次绕过缓存
+AIS_CACHE=0 ais            # 完全关闭缓存
+AIS_LIVE_TTL_MS=3000       # 活体探测有效期(0 = 每次都探)
+AIS_SCAN_TTL_MS=0          # 关闭单文件扫描缓存
+rm -rf ~/.ai-session-hub/cache   # 清空
+```
+

@@ -12,6 +12,10 @@ export interface LoadOptions {
 	tools?: Tool[];
 	/** 跳过活体探测(只列历史,速度更快) */
 	noLive?: boolean;
+	/** 绕过缓存(强制重新探测/扫描) */
+	noCache?: boolean;
+	/** 活体探测缓存有效期(毫秒);TUI 用它把探测频率降到比界面刷新更低 */
+	liveTtlMs?: number;
 }
 
 export interface LoadResult {
@@ -23,7 +27,7 @@ export interface LoadResult {
 export async function loadViews(options: LoadOptions = {}): Promise<LoadResult> {
 	const livePromise = options.noLive
 		? Promise.resolve<LiveSnapshot>({ processes: [], tabs: [], consoleWindows: [] })
-		: probeLive();
+		: probeLive({ noCache: options.noCache, ttlMs: options.liveTtlMs });
 	const [sessions, live, heartbeats] = await Promise.all([scanAllSessions({ tools: options.tools }), livePromise, readHeartbeats()]);
 
 	const views = correlate({

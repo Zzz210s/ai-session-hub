@@ -89,6 +89,16 @@ test("renderScreen:空列表给出引导文案", () => {
 	assert.match(lines.map(stripAnsi).join("\n"), /没有匹配的会话/);
 });
 
+test("renderScreen:底部统一为「键位 | 消息」,消息在后", () => {
+	const withMessage = { ...state(), message: "已删除「演示会话」:已放入系统回收站" };
+	const text = stripAnsi(renderScreen(withMessage).join("\n"));
+	const footer = text.split("\n").filter((line) => line.includes("接管终端")).pop() ?? "";
+	assert.match(footer, /接管终端.*d 删除.*\|.*已删除「演示会话」/, "键位在前,消息在后");
+	const confirmState = { ...state(), confirm: "删除「演示会话」?会放入系统回收站(可在资源管理器还原)" };
+	const confirmFooter = stripAnsi(renderScreen(confirmState).join("\n")).split("\n").filter((line) => line.includes("确认")).pop() ?? "";
+	assert.match(confirmFooter, /^\s*y 确认 \/ n 取消 \| 删除「演示会话」/, "确认态同样键位在前");
+});
+
 test("renderScreen:搜索态与消息展示", () => {
 	const lines = renderScreen(state({ searchMode: true, query: "config", message: "已复制命令" }));
 	const text = lines.map(stripAnsi).join("\n");

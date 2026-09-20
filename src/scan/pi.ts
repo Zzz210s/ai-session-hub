@@ -6,6 +6,7 @@
  */
 
 import { homedir } from "node:os";
+import { cachedScan } from "../cache.ts";
 import { basename, join } from "node:path";
 import type { SessionRecord } from "../model.ts";
 import { collectFiles, fileMeta, parseJsonLine, readHeadLines, readTailLines, scanMarkedLines, toSnippet } from "./io.ts";
@@ -102,7 +103,8 @@ export async function scanPiSessions(): Promise<SessionRecord[]> {
 	const out: SessionRecord[] = [];
 	for (const file of files) {
 		try {
-			const record = await parsePiSession(file);
+			// 按文件指纹缓存:未变化的会话文件不再重复解析(冷扫描 ~1.2s -> 热扫描 ~0.1s)
+			const record = await cachedScan(file, () => parsePiSession(file));
 			if (record) out.push(record);
 		} catch {
 			/* 单个文件损坏不影响整体 */

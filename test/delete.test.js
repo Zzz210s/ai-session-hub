@@ -50,21 +50,47 @@ test("planDelete:文件缺失时不可删除", async () => {
 	assert.match(plan.reason, /不存在/);
 });
 
-test("planDelete:可删除时会给出路径与需清理的心跳记录", async () => {
+test("planDelete:可删除时会给出路径、去向与需清理的心跳记录", async () => {
 	const { sessionFile, live } = await fixture();
 	const plan = await planDelete(view({ file: sessionFile }), { liveDirectory: live });
 	assert.equal(plan.supported, true);
-	assert.equal(plan.mode, "trash");
+	assert.equal(plan.mode, "recycle", "默认走系统回收站");
 	assert.equal(plan.path, sessionFile);
 	assert.equal(plan.heartbeatFiles.length, 1, "只清理 sessionId 匹配的那条");
 	assert.match(plan.heartbeatFiles[0], /pi-999\.json$/);
 });
 
-test("deleteSession:移入回收目录(可恢复)并清理心跳,不硬删除", async () => {
+test("deleteSession:优先送系统回收站(不硬删除)", async () => {
 	const { sessionFile, live, trash } = await fixture();
-	const result = await deleteSession(view({ file: sessionFile }), { trashDir: trash, liveDirectory: live });
+	let recycled = "";
+	const result = await deleteSession(view({ file: sessionFile }), {
+		trashDir: trash,
+		liveDirectory: live,
+		recycle: async (target) => {
+			recycled = target;
+			// 模拟系统回收站:把文件移走(等价效果)
+			await (await import("node:fs/promises")).rm(target);
+			return { ok: true };
+		},
+	});
 	assert.equal(result.ok, true);
-	assert.match(result.detail, /已删除/);
+	assert.equal(recycled, sessionFile, "应把会话文件交给系统回收站");
+	assert.match(result.detail, /系统回收站/);
+	assert.match(result.detail, /资源管理器还原/);
+	assert.equal(existsSync(sessionFile), false);
+	assert.equal((await readdir(trash).catch(() => [])).length, 0, "走系统回收站时不应再写内部回收目录");
+});
+
+test("deleteSession:系统回收站不可用时退回内部回收目录(并说明原因)", async () => {
+	const { sessionFile, live, trash } = await fixture();
+	const result = await deleteSession(view({ file: sessionFile }), {
+		trashDir: trash,
+		liveDirectory: live,
+		recycle: async () => ({ ok: false, detail: "模拟失败" }),
+	});
+	assert.equal(result.ok, true);
+	assert.match(result.detail, /回收目录/);
+	assert.match(result.detail, /模拟失败/, "应说明退回原因");
 	assert.equal(existsSync(sessionFile), false, "原文件应已移走");
 	const moved = await readdir(trash);
 	assert.equal(moved.length, 1, "回收目录里应有 1 个文件");

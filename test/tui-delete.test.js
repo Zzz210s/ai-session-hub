@@ -61,7 +61,7 @@ test("deleteFlow:可删除时进入确认态,提示含会话名与去向", async
 	const prompt = flow.pending();
 	assert.ok(prompt, "应进入确认态");
 	assert.match(prompt, /演示会话/);
-	assert.match(prompt, /y 确认 \/ n 取消/);
+	assert.match(prompt, /系统回收站/);
 });
 
 test("deleteFlow:取消后不再有待确认提示", async () => {

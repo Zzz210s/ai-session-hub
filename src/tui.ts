@@ -21,7 +21,7 @@ const REFRESH_MS = 3000;
 const REDRAW_THROTTLE_MS = 80;
 
 export interface TuiOptions {
-	load: () => Promise<SessionView[]>;
+	load: (options?: { liveTtlMs?: number }) => Promise<SessionView[]>;
 	filter?: FilterKind;
 	/** 要加载的拓展(默认:环境变量/配置文件/内置默认列表) */
 	extensions?: string[];
@@ -179,8 +179,12 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	});
 
 	screen.enter();
+	// 先画一帧(立即有界面),再去加载 —— 冷缓存时探测/扫描要几秒,不该让用户盯着空白
+	message = "正在探测会话…";
+	draw(true);
 	await reload();
 	if (failures.length) message = `拓展加载失败: ${failures.map((entry) => `${entry.name}(${entry.error})`).join("; ")}`;
+	else if (message === "正在探测会话…") message = "";
 	draw(true);
 	screen.startTicker(() => {
 		void reload().then(() => draw());

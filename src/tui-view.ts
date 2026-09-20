@@ -4,7 +4,7 @@
  */
 
 import type { SessionView } from "./model.ts";
-import { clampLine, displayWidth, fit, stripAnsi } from "./text.ts";
+import { clampLine, displayWidth, fit, stripAnsi, sanitizeForDisplay } from "./text.ts";
 import { renderBody } from "./tui-layout.ts";
 
 export { clampLine, displayWidth, fit, padVisible, sanitizeForDisplay, stripAnsi } from "./text.ts";
@@ -104,11 +104,16 @@ function filterBar(state: TuiState): string {
 }
 
 /** 底部按键提示(分屏聚焦时不同) */
+/**
+ * 底部行:统一为「键位 | 消息」——键位在前(位置固定,便于肌肉记忆),
+ * 消息在后。确认态把键位换成 y/n(此状态下只有这两个键有效)。
+ * 说明:只列核心键位,Enter 的行为取决于会话状态与是否装了拓展,故不在此承诺;
+ * 拓展自己的键位由拓展通过 hints 提供(见 filterBar),无拓展时不出现拓展字样。
+ */
 function footerText(state: TuiState): string {
-	if (state.confirm) return state.confirm;
-	// 只列核心键位:Enter 的行为取决于会话状态与是否装了拓展,故不在此承诺;
-	// 拓展自己的键位由拓展通过 hints 提供(见 filterBar),无拓展时不出现任何拓展字样
-	return "a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | 1-4 筛选 | / 搜索 | q 退出";
+	const keys = state.confirm ? "y 确认 / n 取消" : "a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | 1-4 筛选 | / 搜索 | q 退出";
+	const message = state.confirm ?? state.message;
+	return message ? `${keys} | ${sanitizeForDisplay(message)}` : keys;
 }
 
 /**
@@ -137,8 +142,7 @@ export function renderScreen(state: TuiState): string[] {
 		lines[2] = ` ${DIM}没有匹配的会话(试试 3 全部 / 清空搜索)${RESET}`;
 	}
 
-	const hint = footerText(state);
-	const footer = state.message ? `${state.message}  |  ${hint}` : hint;
+	const footer = footerText(state);
 	lines.push(` ${DIM}${fit(footer, Math.max(0, width - 2))}${RESET}`);
 	return lines.slice(0, height).map((line) => clampLine(line, width));
 }

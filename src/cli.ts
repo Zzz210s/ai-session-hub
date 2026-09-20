@@ -29,6 +29,7 @@ import { describeToolColors } from "./theme.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
 import { deleteSession, planDelete, trashDir } from "./delete.ts";
+import { flushScanCache } from "./cache.ts";
 
 interface Args {
 	command: string;
@@ -40,18 +41,21 @@ interface Args {
 	liveOnly: boolean;
 	/** delete 命令需显式 --yes 才真正删除(默认只预览) */
 	yes: boolean;
+	/** 绕过缓存(强制重新探测) */
+	noCache: boolean;
 }
 
 const TOOLS: Tool[] = ["pi", "claude", "opencode"];
 
 export function parseArgs(argv: string[]): Args {
-	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false };
+	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false, noCache: false };
 	const rest: string[] = [];
 	for (const token of argv) {
 		if (token === "--json") args.json = true;
 		else if (token === "--no-live") args.noLive = true;
 		else if (token === "--live") args.liveOnly = true;
 		else if (token === "--yes" || token === "-y") args.yes = true;
+		else if (token === "--no-cache") args.noCache = true;
 		else if (token.startsWith("--limit")) args.limit = Number(token.split("=")[1] ?? 40) || 40;
 		else if (token.startsWith("--tool=")) {
 			const list = token
@@ -92,7 +96,7 @@ export function toJson(views: SessionView[]): string {
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
-	const { views, live, heartbeatCount } = await loadViews({ tools: args.tools, noLive: args.noLive });
+	const { views, live, heartbeatCount } = await loadViews({ tools: args.tools, noLive: args.noLive, noCache: args.noCache });
 
 	if (args.command === "doctor") {
 		const summary = summarize(views);
@@ -177,12 +181,15 @@ async function main(): Promise<void> {
 	}
 
 	await runTui({
-		load: async () => (await loadViews({ tools: args.tools })).views,
+		load: async (options) => (await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs })).views,
 		filter: args.liveOnly ? "running" : "all",
 	});
 }
 
-main().catch((error: unknown) => {
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+main()
+	.catch((error: unknown) => {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	})
+	// 扫描缓存落盘:命令结束后统一 flush(exit 钩子里的异步写不可靠)
+	.finally(() => flushScanCache());
