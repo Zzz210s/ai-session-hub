@@ -22,6 +22,7 @@ import type { SessionView, Tool } from "./model.ts";
 import { loadViews } from "./hub.ts";
 import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
+import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
 
@@ -95,6 +96,10 @@ async function main(): Promise<void> {
 		console.log(`终端标签: ${live.tabs.length}`);
 		for (const tab of live.tabs) console.log(`  [${tab.index}]${tab.selected ? "*" : " "} ${tab.title}`);
 		console.log(`心跳记录: ${heartbeatCount}`);
+		console.log(`控制台窗口: ${live.consoleWindows.length}(非 Windows Terminal 的兜底聚焦)`);
+		const shell = resolveShell();
+		console.log(`本机 shell: ${shell}(${shellFlavor(shell)} / ${shellPromptLabel(shell)})`);
+		console.log("接管/分屏都用该 shell;可用 AIS_SHELL 覆盖(例如 AIS_SHELL=powershell.exe)");
 		if (live.error) console.log(`探测错误: ${live.error}`);
 		return;
 	}

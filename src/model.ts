@@ -54,6 +54,16 @@ export interface TerminalTab {
 	selected: boolean;
 }
 
+/**
+ * 控制台窗口(非 Windows Terminal 场景:conhost / Windows PowerShell 控制台等)
+ * 通过 AttachConsole(pid) + GetConsoleWindow() 定位,可按 pid 精确对应到会话进程。
+ */
+export interface ConsoleWindow {
+	hwnd: string;
+	pid: number;
+	title: string;
+}
+
 /** 心跳注册表里的一条记录(由各 CLI 的集成写出,最可靠的活性信号) */
 export interface Heartbeat {
 	tool: Tool;
@@ -75,6 +85,7 @@ export interface SessionView extends SessionRecord {
 		pid?: number;
 		heartbeat?: Heartbeat;
 		tab?: TerminalTab;
+		console?: ConsoleWindow;
 	};
 	/** 展示用状态:running / idle / stored */
 	state: "running" | "idle" | "stored";

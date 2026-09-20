@@ -68,7 +68,10 @@ fi
 if [ -d "$HOME/bin" ]; then
   printf '#!/usr/bin/env bash\nexec node --no-warnings "%s/src/cli.ts" "$@"\n' "$REPO_DIR" > "$HOME/bin/ais"
   chmod +x "$HOME/bin/ais"
-  log "已安装命令: $HOME/bin/ais"
+  # PowerShell / cmd 启动器(非 Git Bash 环境)
+  cp "$REPO_DIR/bin/ais.cmd" "$HOME/bin/ais.cmd"
+  cp "$REPO_DIR/bin/ais.ps1" "$HOME/bin/ais.ps1"
+  log "已安装命令: $HOME/bin/ais(bash)· ais.cmd / ais.ps1(PowerShell/cmd)"
 else
   log "用法: node $REPO_DIR/src/cli.ts [list|doctor|focus <查询>];TUI 直接运行 ais"
 fi

@@ -22,7 +22,7 @@ export interface LoadResult {
 
 export async function loadViews(options: LoadOptions = {}): Promise<LoadResult> {
 	const livePromise = options.noLive
-		? Promise.resolve<LiveSnapshot>({ processes: [], tabs: [] })
+		? Promise.resolve<LiveSnapshot>({ processes: [], tabs: [], consoleWindows: [] })
 		: probeLive();
 	const [sessions, live, heartbeats] = await Promise.all([scanAllSessions({ tools: options.tools }), livePromise, readHeartbeats()]);
 
@@ -30,6 +30,7 @@ export async function loadViews(options: LoadOptions = {}): Promise<LoadResult> 
 		sessions,
 		processes: live.processes,
 		tabs: live.tabs,
+		consoleWindows: live.consoleWindows,
 		heartbeats,
 	});
 	return { views, live, heartbeatCount: heartbeats.length };

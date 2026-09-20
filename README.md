@@ -79,6 +79,34 @@ ais doctor               # discovery diagnostics: per-tool counts, live processe
 ais focus  <query>       # focus a running session's window
 ```
 
+## Shell support (Git Bash / PowerShell)
+
+The tool itself is a Node program and runs anywhere; the two places that *execute commands* — **attach** and **split panes** — carry them with **your machine's shell**:
+
+| | |
+|---|---|
+| Detection order | `AIS_SHELL` override → Git Bash → PowerShell 7 (`pwsh`) → Windows PowerShell 5.1 → cmd. `ais doctor` prints what was detected |
+| Git Bash | `bash.exe -lc "<command>; exec bash"` (stays interactive afterwards) |
+| PowerShell | `powershell.exe` / `pwsh.exe` `-NoLogo -NoProfile -NoExit -Command "<command>"` |
+| cmd | `cmd.exe /d /s /c "<command>"` |
+
+Override it, temporarily or permanently:
+
+```bash
+export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+```
+
+**Using it from PowerShell**: `setup.sh` installs three launchers into `~/bin` — `ais` (bash), `ais.cmd` (cmd), `ais.ps1` (PowerShell):
+
+```powershell
+& $HOMEinis.ps1            # open the TUI
+& $HOMEinis.ps1 list --live
+```
+
+**Focusing an existing window** — two cases:
+- **Windows Terminal** (the common one): its tabs are enumerated and the matching tab is selected (tab titles carry the status glyph + session name written by this tool's ecosystem)
+- **Legacy console windows** (conhost / a standalone PowerShell window): located via `AttachConsole(pid) + GetConsoleWindow()` and brought to front (ConPTY `PseudoConsoleWindow` placeholders are filtered out)
+
 ## Extensions (core vs. extension)
 
 **This repository is the core**: session discovery, liveness, annotation, focus/attach/copy, and the TUI shell. **Same-page split panes are provided by an extension** — the core references no concrete extension.

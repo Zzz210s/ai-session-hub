@@ -70,6 +70,34 @@ ais doctor               # 探测诊断:各工具会话数、活体进程、终�
 ais focus  <查询>        # 聚焦运行中的会话
 ```
 
+## Shell 适配(Git Bash / PowerShell)
+
+工具本身是 Node 程序,可在任意终端里跑;需要"执行命令"的两处——**接管终端(attach)** 与 **分屏面板**——会用**你本机的 shell** 承载命令:
+
+| 环境 | 选择 | 启动参数 |
+|---|---|---|
+| shell 探测顺序 | `AIS_SHELL` 指定 > Git Bash > PowerShell 7(`pwsh`) > Windows PowerShell 5.1 > cmd | 用 `ais doctor` 可看当前探测结果 |
+| Git Bash | `bash.exe` | `-lc "<command>; exec bash"`(命令结束后保持可交互) |
+| PowerShell | `powershell.exe` / `pwsh.exe` | `-NoLogo -NoProfile -NoExit -Command "<command>"` |
+| cmd | `cmd.exe` | `/d /s /c "<command>"` |
+
+覆盖方式(临时或永久):
+
+```bash
+export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+```
+
+**在 PowerShell 里使用**:`setup.sh` 会安装三种启动器到 `~/bin`——`ais`(bash)、`ais.cmd`(cmd)、`ais.ps1`(PowerShell):
+
+```powershell
+& $HOMEinis.ps1            # 打开 TUI
+& $HOMEinis.ps1 list --live
+```
+
+**聚焦已有窗口的两种情形**:
+- **Windows Terminal**(主流):枚举标签页标题并选中对应标签(状态字形 + 会话名来自本工具生态)
+- **传统控制台窗口**(conhost / 独立 PowerShell 窗口):用 `AttachConsole(pid) + GetConsoleWindow()` 定位该会话所在的窗口并置前(自动排除 ConPTY 的 `PseudoConsoleWindow` 占位句柄)
+
 ## 拓展(核心与拓展的边界)
 
 **本仓库是核心**:负责会话发现、活性判定、标注、聚焦/接管/复制命令,以及 TUI 骨架。**同页分屏等能力由拓展提供**——核心不引用任何具体拓展。

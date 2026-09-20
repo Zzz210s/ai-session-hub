@@ -1,8 +1,8 @@
 # Focus a Windows Terminal tab: select tab by index via UI Automation and bring the window forward.
 # ASCII-only on purpose (PowerShell 5.1 ANSI script parsing).
 param(
-  [Parameter(Mandatory = $true)][int]$WindowPid,
-  [Parameter(Mandatory = $true)][int]$TabIndex,
+  [int]$WindowPid = 0,
+  [int]$TabIndex = -1,
   [string]$Hwnd = ""
 )
 
@@ -21,6 +21,17 @@ public class WinFocus {
 
 $rootEl = [System.Windows.Automation.AutomationElement]::RootElement
 $children = $rootEl.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
+
+if ($Hwnd -ne "") {
+  # 直接聚焦某个窗口句柄(控制台窗口场景)
+  $hwndVal = 0
+  try { $hwndVal = [int64]$Hwnd } catch { $hwndVal = 0 }
+  if ($hwndVal -eq 0) { Write-Output "BAD_HWND"; exit 5 }
+  $ptr = [IntPtr]$hwndVal
+  if ([WinFocus]::IsIconic($ptr)) { [void][WinFocus]::ShowWindow($ptr, 9) }
+  if ([WinFocus]::SetForegroundWindow($ptr)) { Write-Output "FOCUSED" } else { Write-Output "FOCUS_FAILED"; exit 6 }
+  exit 0
+}
 
 $targetWindow = $null
 foreach ($w in $children) {

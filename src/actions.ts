@@ -6,7 +6,8 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
-import { focusTab } from "./live/windows.ts";
+import { focusTab, focusWindow } from "./live/windows.ts";
+import { resolveShell, shellArgs } from "./shell.ts";
 
 /**
  * 解析 CLI 可执行文件的绝对路径。
@@ -53,23 +54,18 @@ export interface ActionResult {
 /** 聚焦该会话已运行的终端标签(需要相关标签标题能与会话名匹配) */
 export async function focusSession(view: SessionView): Promise<ActionResult> {
 	const tab = view.live?.tab;
-	if (!tab) return { ok: false, detail: "该会话没有可定位的终端标签(未运行或标题不匹配)" };
-	if (tab.index < 0) return { ok: false, detail: "该窗口未枚举到标签页" };
-	const result = await focusTab(tab);
-	return { ok: result.ok, detail: result.ok ? `已聚焦窗口 pid ${tab.windowPid} 的第 ${tab.index + 1} 个标签` : `聚焦失败: ${result.detail}` };
-}
-
-/** 解析 Git Bash 的绝对路径(避免 wt 新标签里 PATH 缺 bash 导致 0x80070002) */
-function resolveBash(): string {
-	const candidates = ["C:\Program Files\Git\bin\bash.exe", "C:\Program Files (x86)\Git\bin\bash.exe"];
-	for (const candidate of candidates) {
-		try {
-			if (existsSync(candidate)) return candidate;
-		} catch {
-			/* 继续尝试下一个 */
-		}
+	if (tab) {
+		if (tab.index < 0) return { ok: false, detail: "该窗口未枚举到标签页" };
+		const result = await focusTab(tab);
+		return { ok: result.ok, detail: result.ok ? `已聚焦窗口 pid ${tab.windowPid} 的第 ${tab.index + 1} 个标签` : `聚焦失败: ${result.detail}` };
 	}
-	return "bash";
+	// 非 Windows Terminal:按控制台窗口句柄聚焦(conhost / Windows PowerShell 控制台)
+	const consoleWindow = view.live?.console;
+	if (consoleWindow) {
+		const result = await focusWindow(consoleWindow.hwnd);
+		return { ok: result.ok, detail: result.ok ? `已聚焦控制台窗口(pid ${consoleWindow.pid})` : `聚焦失败: ${result.detail}` };
+	}
+	return { ok: false, detail: "该会话没有可定位的终端窗口(未运行或标题不匹配)" };
 }
 
 /** 在 Windows Terminal 新标签里恢复该会话 */
@@ -81,14 +77,15 @@ export function resumeInNewTab(view: SessionView): ActionResult {
 	try {
 		// wt 的两条硬规则:
 		//   1) 尾部命令必须是"程序 + 参数"(wt 不经 shell 执行,不能只给一串命令)
-		//   2) wt 用 ";" 分隔自己的多条命令,故命令串内不能出现分号(用 && 串联)
-		// 因此:绝对路径 Git Bash + -lc(避免默认 profile 把 bash 解析到 WSL 的 bash)
-		const shellCommand = `${command} && exec "\${BASH:-bash}"`;
-		const child = spawn(
-			"wt.exe",
-			["-w", "0", "nt", "--title", title, "-d", cwd, resolveBash(), "-lc", shellCommand],
-			{ detached: true, stdio: "ignore", windowsHide: false },
-		);
+		//   2) wt 用 ";" 分隔自己的多条命令,故命令串内不能出现分号
+		// shell 由适配层决定(Git Bash / PowerShell),参数形态随之不同
+		const shell = resolveShell();
+		const args = shellArgs(shell, command, { keepAlive: true }).command;
+		const child = spawn("wt.exe", ["-w", "0", "nt", "--title", title, "-d", cwd, shell, ...args], {
+			detached: true,
+			stdio: "ignore",
+			windowsHide: false,
+		});
 		child.unref();
 		return {
 			ok: true,
@@ -125,8 +122,11 @@ export async function smartAction(view: SessionView): Promise<ActionResult> {
 export function attachSession(view: SessionView): Promise<number> {
 	const command = resumeCommand(view);
 	const cwd = view.cwd && existsSync(view.cwd) ? view.cwd : process.cwd();
+	// 用用户自己的 shell 承载命令(Git Bash 或 PowerShell),退出后保持交互
+	const shell = resolveShell();
+	const args = shellArgs(shell, command, { keepAlive: true }).command;
 	return new Promise((resolve) => {
-		const child = spawn(command, { shell: true, stdio: "inherit", cwd, windowsHide: false });
+		const child = spawn(shell, args, { stdio: "inherit", cwd, windowsHide: false });
 		child.on("exit", (code) => resolve(code ?? 0));
 		child.on("error", () => resolve(-1));
 	});

@@ -103,3 +103,26 @@ test("correlate:运行中的会话排在前面", () => {
 	});
 	assert.equal(views[0].id, "live");
 });
+
+test("correlate:非 Windows Terminal 时按 pid 匹配控制台窗口", () => {
+	const views = correlate({
+		sessions: [session({ id: "c1", name: "ps-session" })],
+		processes: [],
+		tabs: [],
+		consoleWindows: [{ hwnd: "4242", pid: 999, title: "Windows PowerShell" }],
+		heartbeats: [{ tool: "pi", pid: 999, sessionId: "c1", status: "idle", updatedAt: new Date().toISOString() }],
+	});
+	assert.equal(views[0].live?.console?.hwnd, "4242");
+	assert.equal(views[0].state, "running");
+});
+
+test("correlate:控制台窗口 pid 与会话进程不一致时不误匹配", () => {
+	const views = correlate({
+		sessions: [session({ id: "c2" })],
+		processes: [],
+		tabs: [],
+		consoleWindows: [{ hwnd: "4242", pid: 111, title: "Windows PowerShell" }],
+		heartbeats: [{ tool: "pi", pid: 999, sessionId: "c2", updatedAt: new Date().toISOString() }],
+	});
+	assert.equal(views[0].live?.console, undefined);
+});
