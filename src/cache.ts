@@ -8,7 +8,7 @@
  * 关闭方式:AIS_CACHE=0,或 TTL 设为 0。
  */
 
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -184,11 +184,11 @@ export async function clearCache(): Promise<void> {
 	const dir = cacheDir();
 	let entries: string[] = [];
 	try {
-		entries = await fs.readdir(dir);
+		entries = await readdir(dir);
 	} catch {
 		return;
 	}
 	await Promise.all(
-		entries.map((name) => fs.rm(path.join(dir, name), { force: true, recursive: true }).catch(() => undefined)),
+		entries.map((name) => rm(path.join(dir, name), { force: true, recursive: true }).catch(() => undefined)),
 	);
 }
