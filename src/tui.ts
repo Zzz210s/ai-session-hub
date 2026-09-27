@@ -4,6 +4,7 @@
  */
 
 import type { SessionView } from "./model.ts";
+import { clearCache } from "./cache.ts";
 import { copyResumeCommand, focusSession, resumeCommand } from "./actions.ts";
 import { type ActionKind } from "./tui-keys.ts";
 import { createInputPump } from "./tui-input.ts";
@@ -164,7 +165,12 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			hints: () => extensions.flatMap((extension) => extension.hints ?? []),
 		},
 		refresh: async () => {
-			message = "手动刷新…";
+			message = "强制刷新中(清缓存)…";
+			try {
+				await clearCache();
+			} catch {
+				/* 清缓存失败不阻塞刷新 */
+			}
 			await reload();
 			draw(true);
 		},

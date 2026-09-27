@@ -178,3 +178,17 @@ export async function flushScanCache(): Promise<void> {
 		/* 忽略 */
 	}
 }
+
+/** 清空缓存目录(强制刷新用):下一次读取必然重新探测/重解析 */
+export async function clearCache(): Promise<void> {
+	const dir = cacheDir();
+	let entries: string[] = [];
+	try {
+		entries = await fs.readdir(dir);
+	} catch {
+		return;
+	}
+	await Promise.all(
+		entries.map((name) => fs.rm(path.join(dir, name), { force: true, recursive: true }).catch(() => undefined)),
+	);
+}
