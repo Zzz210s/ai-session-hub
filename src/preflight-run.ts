@@ -1,26 +1,28 @@
 /**
- * 会话启动前的自更新(默认前台):覆盖本机**所有 AI CLI 及其插件**。
+ * 会话启动前的自更新(默认前台)。
  *
- * 需求(2026-10-01):"检测所有会话对应使用的 llm/cli 的更新和他们插件的更新",
- * 并在"更新完成后再用更新后的配置启动会话"。
+ * 用户要求(2026-10-01):"没必要检测,直接跑一遍所有 update 相关命令" ——
+ * 因此这里**不再做版本/变更检测**(不查 npm、不比对版本、不解析 Already up to date),
+ * 每次启动按固定顺序把所有更新命令跑一遍,再用更新后的环境启动会话。
  *
- * 三层门控(避免每次启动都付全量更新的时间):
- *   1) 配置仓库逐个 git pull(识别 "Already up to date")
- *   2) 本地 pi 版本 vs npm 最新版,不同才 pi update
- *   3) 扩展/其它 CLI/插件/重新部署,仅在 (仓库有变化 || pi 有新版 || 距上次 >24h)
+ * 顺序:
+ *   1) git pull 各配置仓库(config-ai / config-cli / 三个独立扩展 / brief-hub,存在才做)
+ *   2) pi update
+ *   3) pi update --extensions
+ *   4) 其它 AI CLI + 插件:claude(本体 + 插件)、opencode、codex、gemini(尽力而为)
+ *   5) config-ai/setup.sh 重新部署(把最新配置投射到各 CLI)
  *
- * 环境坑与对策(均为实测):
- *   - Windows 上裸 bash 可能落到 WSL(System32\bash.exe) -> 用 Git Bash 绝对路径
- *   - **execFile 不能直接执行 .cmd/.bat**(Node 只补 .exe)-> 统一经 cmd.exe /c 转发
- *   - pi 必须用 pnpm 新布局(pnpm/bin/pi),旧 shim 指向旧版本
+ * 环境坑:Windows 上 .cmd/.bat 不能被 execFile 直接执行,裸 bash 又可能落到 WSL ——
+ * 所以**所有命令统一经 Git Bash 绝对路径执行**,并把 .cmd 路径用双引号包住。
  *
- * 逃生舱:AIS_NO_UPDATE=1 跳过;AIS_UPDATE_BACKGROUND=1 退回后台模式。
+ * 逃生舱:AIS_NO_UPDATE=1 全跳;AIS_SKIP_DEPLOY=1 只更新不重新部署(省最多时间);
+ *         AIS_UPDATE_BACKGROUND=1 退回后台模式(下次启动只提示一行)。
  */
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { execRunner, planSteps, preflight, readState, shouldRun, type Step } from "./preflight.ts";
+import { execRunner, preflight, readState, shouldRun, type Step } from "./preflight.ts";
 
 export interface StartOptions {
 	force?: boolean;
@@ -31,23 +33,16 @@ export interface StartOptions {
 	onProgress?: (message: string) => void;
 }
 
-const UP_TO_DATE = /Already up to date|up to date|已是最新|already up-to-date/i;
 const VERSION = /(\d+\.\d+\.\d+)/;
 
-/** Windows 上 .cmd/.bat 不能被 execFile 直接执行:经 cmd.exe /c 转发 */
-export function shimSafe(step: Step): Step {
-	if (process.platform !== "win32") return step;
-	if (!/\.(cmd|bat)$/i.test(step.command)) return step;
-	const comspec = process.env.ComSpec ?? "cmd.exe";
-	const quoted = [step.command, ...step.args].map((part) => `"${part}"`).join(" ");
-	return { ...step, command: comspec, args: ["/d", "/s", "/c", quoted] };
-}
+/** 配置仓库(存在才处理) */
+export const CONFIG_REPOS = ["config-ai", "config-cli", "pi-tab-status", "pi-codegraph", "ai-session-hub", "brief-hub"] as const;
 
 /** Git Bash 绝对路径(避免落到 WSL 的 bash) */
 export function resolveGitBash(): string | undefined {
-	const programFiles = process.env.ProgramFiles ?? "C:/Program Files";
-	const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)";
-	for (const candidate of [`${programFiles}/Git/bin/bash.exe`, `${programFilesX86}/Git/bin/bash.exe`]) {
+	const pf = process.env.ProgramFiles ?? "C:/Program Files";
+	const pf86 = process.env["ProgramFiles(x86)"] ?? "C:/Program Files (x86)";
+	for (const candidate of [`${pf}/Git/bin/bash.exe`, `${pf86}/Git/bin/bash.exe`]) {
 		try {
 			if (existsSync(candidate)) return candidate;
 		} catch {
@@ -57,12 +52,11 @@ export function resolveGitBash(): string | undefined {
 	return undefined;
 }
 
-/** pi 可执行:pnpm 新布局 -> 旧 shim -> npm 全局 -> 裸 pi */
+/** pi 可执行:pnpm 新布局优先,旧 shim 指向旧版本 */
 export function resolvePi(): string {
 	const local = process.env.LOCALAPPDATA ?? "";
 	const roaming = process.env.APPDATA ?? "";
-	const candidates = [`${local}/pnpm/bin/pi.CMD`, `${local}/pnpm/bin/pi`, `${local}/pnpm/pi.CMD`, `${local}/pnpm/pi`, `${roaming}/npm/pi.CMD`];
-	for (const candidate of candidates) {
+	for (const candidate of [`${local}/pnpm/bin/pi.CMD`, `${local}/pnpm/bin/pi`, `${local}/pnpm/pi.CMD`, `${roaming}/npm/pi.CMD`]) {
 		try {
 			if (existsSync(candidate)) return candidate;
 		} catch {
@@ -72,11 +66,10 @@ export function resolvePi(): string {
 	return "pi";
 }
 
-/** npm 可执行(Windows 上是 .cmd,需要 shimSafe 转发) */
+/** npm 可执行(Windows 上是 .cmd;仅用于版本探测等可选功能) */
 export function resolveNpm(): string {
 	const roaming = process.env.APPDATA ?? "";
-	const candidates = [`${roaming}/npm/npm.cmd`, `${roaming}/npm/npm`];
-	for (const candidate of candidates) {
+	for (const candidate of [`${roaming}/npm/npm.cmd`, `${roaming}/npm/npm`]) {
 		try {
 			if (existsSync(candidate)) return candidate;
 		} catch {
@@ -86,28 +79,50 @@ export function resolveNpm(): string {
 	return "npm";
 }
 
-/** 所有 AI CLI + 插件的更新步骤:只对已安装的工具生成;pi 严格,其它尽力而为 */
-export function toolUpdateSteps(input: { piBin: string; gitBash?: string; piChanged?: boolean }): Step[] {
-	const steps: Step[] = [];
-	if (input.piChanged !== false) {
-		steps.push(shimSafe({ label: "更新 pi 本体", command: input.piBin, args: ["update"], timeoutMs: 300_000 }));
-	}
-	steps.push(shimSafe({ label: "更新 pi 扩展", command: input.piBin, args: ["update", "--extensions"], timeoutMs: 900_000 }));
+/** 经 Git Bash 执行一条命令(可尽力而为:失败不计入失败项) */
+function bashStep(label: string, bash: string, command: string, options: { best?: boolean; timeoutMs?: number } = {}): Step {
+	const suffix = options.best ? " >/dev/null 2>&1 || true" : "";
+	return { label, command: bash, args: ["-lc", command + suffix], timeoutMs: options.timeoutMs ?? 900_000 };
+}
 
-	if (input.gitBash) {
-		const npmDir = `${process.env.APPDATA ?? ""}/npm`;
-		const others: [string, string, string][] = [
-			["claude", "claude update", "更新 Claude Code"],
-			["claude", "claude plugin update", "更新 Claude 插件"],
-			["opencode", "opencode upgrade", "更新 opencode"],
-			["codex", "npm i -g @openai/codex@latest", "更新 codex"],
-			["gemini", "npm i -g @google/gemini-cli@latest", "更新 gemini"],
-		];
-		for (const [bin, command, label] of others) {
-			const installed = existsSync(`${npmDir}/${bin}.cmd`) || (process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(`${dir}/${bin}.cmd`));
-			if (!installed) continue;
-			// 尽力而为:失败不阻断、也不计入失败项
-			steps.push({ label, command: input.gitBash, args: ["-lc", `${command} >/dev/null 2>&1 || true`], timeoutMs: 900_000 });
+/** 全部更新步骤(不检测,直接跑) */
+export function planUpdateSteps(input: { piBin: string; gitBash?: string; home?: string; skipDeploy?: boolean }): Step[] {
+	const home = input.home ?? process.env.USERPROFILE ?? "";
+	const bash = input.gitBash;
+	const steps: Step[] = [];
+	for (const repo of CONFIG_REPOS) {
+		const dir = `${home}/${repo}`;
+		try {
+			if (!existsSync(dir)) continue;
+		} catch {
+			continue;
+		}
+		// git 是 .exe,可直接执行;但仍走同一执行器,失败会如实显示
+		steps.push({ label: `拉新 ${repo}`, command: "git", args: ["-C", dir, "pull", "--ff-only", "--quiet"], timeoutMs: 120_000 });
+	}
+	if (!bash) return steps; // 没有 Git Bash 时只做 git pull(其余命令无法安全执行)
+	const quoted = `"${input.piBin}"`;
+	steps.push(bashStep("更新 pi 本体", bash, `${quoted} update`, { timeoutMs: 600_000 }));
+	steps.push(bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`));
+	const npmDir = `${process.env.APPDATA ?? ""}/npm`;
+	const others: [string, string, string][] = [
+		["claude", "claude update", "更新 Claude Code"],
+		["claude", "claude plugin update", "更新 Claude 插件"],
+		["opencode", "opencode upgrade", "更新 opencode"],
+		["codex", "npm i -g @openai/codex@latest", "更新 codex"],
+		["gemini", "npm i -g @google/gemini-cli@latest", "更新 gemini"],
+	];
+	for (const [bin, command, label] of others) {
+		const installed = existsSync(`${npmDir}/${bin}.cmd`) || (process.env.PATH ?? "").split(";").some((dir) => dir && existsSync(`${dir}/${bin}.cmd`));
+		if (!installed) continue;
+		steps.push(bashStep(label, bash, command, { best: true }));
+	}
+	if (!input.skipDeploy) {
+		const setup = `${home}/config-ai/setup.sh`;
+		try {
+			if (existsSync(setup)) steps.push(bashStep("重新部署配置", bash, `"${setup}"`, { timeoutMs: 900_000 }));
+		} catch {
+			/* 忽略 */
 		}
 	}
 	return steps;
@@ -128,25 +143,28 @@ export function hintFor(state: { at: number; summary: string } | undefined, now:
 	return "[ais] 上次启动前自更新(" + when + "): " + state.summary;
 }
 
-/** 版本号探测(经 shimSafe:Windows 上的 .cmd 也能跑) */
-async function version(bin: string, args: string[]): Promise<string | undefined> {
-	const step = shimSafe({ label: "version", command: bin, args, timeoutMs: 60_000 });
+/** 版本探测(保留:供诊断使用;不再参与启动决策) */
+export async function localPiVersion(bin = "pi"): Promise<string | undefined> {
+	const bash = resolveGitBash();
+	const step = bash ? bashStep("version", bash, `"${bin}" --version`, { timeoutMs: 60_000 }) : { command: bin, args: ["--version"], timeoutMs: 60_000 };
 	const { ok, out } = await execRunner(step.command, step.args, step.timeoutMs);
 	if (!ok) return undefined;
 	const m = out.match(VERSION);
 	return m ? m[1] : undefined;
 }
 
-export async function localPiVersion(bin = "pi"): Promise<string | undefined> {
-	return version(bin, ["--version"]);
-}
-
 export async function latestPiVersion(): Promise<string | undefined> {
-	return version(resolveNpm(), ["view", "@earendil-works/pi-coding-agent", "version"]);
+	const bash = resolveGitBash();
+	const command = `"${resolveNpm()}" view @earendil-works/pi-coding-agent version`;
+	const step = bash ? bashStep("latest", bash, command, { timeoutMs: 60_000 }) : { command: resolveNpm(), args: ["view", "@earendil-works/pi-coding-agent", "version"], timeoutMs: 60_000 };
+	const { ok, out } = await execRunner(step.command, step.args, step.timeoutMs);
+	if (!ok) return undefined;
+	const m = out.match(VERSION);
+	return m ? m[1] : undefined;
 }
 
-/** 是否需要重新部署(纯函数) */
-export function needsDeploy(input: { reposChanged: boolean; piChanged: boolean; state?: { at: number }; now: number; ttlMs?: number }): boolean {
+/** 保留:后台模式的 TTL 判断(仅 AIS_UPDATE_BACKGROUND=1 时使用) */
+export function needsDeploy(input: { reposChanged?: boolean; piChanged?: boolean; state?: { at: number }; now: number; ttlMs?: number }): boolean {
 	if (input.reposChanged || input.piChanged) return true;
 	const ttl = input.ttlMs ?? 24 * 3600_000;
 	return !input.state || input.now - input.state.at >= ttl;
@@ -162,7 +180,7 @@ function spawnDetached(): void {
 	}
 }
 
-/** 启动前自更新。返回一行字符串(无动作时 undefined);任何异常都不抛出。 */
+/** 启动前自更新:不检测,直接跑全部更新命令;返回一行摘要 */
 export async function startPreflight(options: StartOptions = {}): Promise<string | undefined> {
 	try {
 		const now = options.now ?? Date.now();
@@ -176,36 +194,18 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 		}
 
 		const gitBash = resolveGitBash();
-		const piBin = resolvePi();
-		const all = planSteps(gitBash ? { piBin, bash: gitBash } : { piBin });
-		const pulls = all.filter((step) => step.label.startsWith("拉新"));
+		const steps = planUpdateSteps({
+			piBin: resolvePi(),
+			gitBash,
+			skipDeploy: process.env.AIS_SKIP_DEPLOY === "1",
+		});
+		if (steps.length === 0) return undefined;
 
-		say("检查配置仓库…");
-		let reposChanged = false;
-		for (const step of pulls) if (await runQuiet(step)) reposChanged = true;
-
-		say("检查 pi 版本…");
-		const [local, remote] = await Promise.all([localPiVersion(piBin), latestPiVersion()]);
-		const piChanged = Boolean(local && remote && local !== remote);
-
-		if (!needsDeploy({ reposChanged, piChanged, state: readState(), now, ttlMs: options.ttlMs })) {
-			return "[ais] 已是最新(" + (local ?? "版本未知") + "),跳过自更新";
-		}
-
-		const redeploy = all.filter((step) => step.label === "重新部署配置").map(shimSafe);
-		const steps = [...toolUpdateSteps({ piBin, gitBash, piChanged }), ...redeploy];
-		say("应用更新(" + steps.length + " 步)…");
+		say("执行 " + steps.length + " 项更新…");
 		const result = await preflight({ force: true, steps, now });
-		const what = [reposChanged ? "配置" : undefined, piChanged ? "pi" : undefined].filter(Boolean).join("+") || "定时刷新";
-		return "[ais] 启动前自更新(" + what + "): " + result.summary;
+		const failed = result.steps.filter((step) => !step.ok).map((step) => step.label);
+		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)");
 	} catch (error) {
 		return "[ais] 自更新跳过(" + (error instanceof Error ? error.message : String(error)) + ")";
 	}
-}
-
-/** 跑一步并判断是否产生变化(git pull 无变化时输出含 Already up to date) */
-async function runQuiet(step: Step): Promise<boolean> {
-	const safe = shimSafe(step);
-	const { ok, out } = await execRunner(safe.command, safe.args, safe.timeoutMs);
-	return ok && !UP_TO_DATE.test(out);
 }
