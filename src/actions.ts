@@ -15,12 +15,34 @@ import { resolveShell, shellArgs } from "./shell.ts";
  * 直接用 `pi` 会 "command not found"(表现为标签一闪而过)。
  */
 function resolveCliCommand(tool: SessionView["tool"]): string {
+	// 显式覆盖优先(AIS_PI_BIN / AIS_CLAUDE_BIN)
+	const override = tool === "pi" ? process.env.AIS_PI_BIN : tool === "claude" ? process.env.AIS_CLAUDE_BIN : undefined;
+	if (override && existsSync(override)) return override.replace(/\\/g, "/");
 	const local = process.env.LOCALAPPDATA ?? "";
 	const roaming = process.env.APPDATA ?? "";
+	// PATH 上能跑到的也算候选(用户 shell 实际用的那个)
+	const fromPath = (process.env.PATH ?? "")
+		.split(process.platform === "win32" ? ";" : ":")
+		.flatMap((dir) => (dir ? [`${dir}/${tool}`, `${dir}/${tool}.cmd`, `${dir}/${tool}.CMD`] : []))
+		.filter((candidate) => {
+			try {
+				return existsSync(candidate);
+			} catch {
+				return false;
+			}
+		});
 	const candidates: Record<string, string[]> = {
-		pi: [join(local, "pnpm", "pi"), join(local, "pnpm", "pi.CMD")],
-		claude: [join(roaming, "npm", "claude"), join(roaming, "npm", "claude.CMD"), join(local, "pnpm", "claude")],
-		opencode: [join(local, "pnpm", "opencode"), join(local, "pnpm", "opencode.CMD")],
+		// 先看新版 pnpm 布局(pnpm 10+: <local>/pnpm/bin),旧 shim 指向 global/5(旧版本),
+		// 曾经导致 ais 拉起的会话一直跑旧 pi + 旧扩展集
+		pi: [
+			join(local, "pnpm", "bin", "pi"),
+			join(local, "pnpm", "bin", "pi.CMD"),
+			...fromPath,
+			join(local, "pnpm", "pi"),
+			join(local, "pnpm", "pi.CMD"),
+		],
+		claude: [join(roaming, "npm", "claude"), join(roaming, "npm", "claude.CMD"), ...fromPath, join(local, "pnpm", "claude")],
+		opencode: [join(local, "pnpm", "bin", "opencode"), join(local, "pnpm", "bin", "opencode.CMD"), ...fromPath, join(local, "pnpm", "opencode.CMD")],
 	};
 	for (const candidate of candidates[tool] ?? []) {
 		try {

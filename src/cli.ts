@@ -25,6 +25,7 @@ import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
 import { configuredExtensions } from "./extensions.ts";
+import { cliPreflight } from "./preflight.ts";
 import { describeToolColors } from "./theme.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
@@ -180,6 +181,8 @@ async function main(): Promise<void> {
 		return;
 	}
 
+	const pre = await cliPreflight({ update: args.bool.has("update"), noUpdate: args.bool.has("no-update") });
+	if (pre) console.log(pre);
 	await runTui({
 		load: async (options) => (await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs })).views,
 		filter: args.liveOnly ? "running" : "all",
