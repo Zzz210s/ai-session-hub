@@ -146,7 +146,8 @@ async function main(): Promise<void> {
 		.catch(() => undefined);
 	if (pre) console.log(pre);
 	await runTui({
-		load: async (options) => (await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs })).views,
+		load: async (options) =>
+			(await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs, staleLive: options?.staleLive, staleSessions: options?.staleSessions })).views,
 		filter: args.liveOnly ? "running" : "all",
 	});
 }

@@ -39,6 +39,8 @@ export interface PreflightOptions {
 	steps: Step[];
 	runner?: Runner;
 	onProgress?: (message: string) => void;
+	/** 每一步完成后回调(标签、是否成功、耗时毫秒、失败时的输出尾部) */
+	onStepDone?: (step: { label: string; ok: boolean; ms: number; detail?: string }) => void;
 }
 
 /** 顺序执行步骤;失败只记录,不影响后续步骤 */
@@ -47,8 +49,12 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRes
 	const results: PreflightResult["steps"] = [];
 	for (const step of options.steps) {
 		options.onProgress?.(`${step.label}…`);
+		const startedAt = performance.now();
 		const { ok, out } = await run(step.command, step.args, step.timeoutMs);
-		results.push({ label: step.label, ok, detail: ok ? undefined : out.split("\n").slice(-2).join(" ").slice(0, 160) });
+		const ms = Math.round(performance.now() - startedAt);
+		const detail = ok ? undefined : out.split("\n").slice(-2).join(" ").slice(0, 160);
+		results.push({ label: step.label, ok, detail });
+		options.onStepDone?.({ label: step.label, ok, ms, detail });
 	}
 	const failed = results.filter((result) => !result.ok);
 	const summary =

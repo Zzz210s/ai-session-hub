@@ -18,6 +18,8 @@ export interface LiveSnapshot {
 	/** 非 Windows Terminal 的控制台窗口(conhost / PowerShell 控制台) */
 	consoleWindows: ConsoleWindow[];
 	error?: string;
+	/** 这份快照来自过期缓存(已在后台刷新) —— 界面可先拿它渲染 */
+	stale?: boolean;
 }
 
 /** 依据命令行判定属于哪个 CLI;不属于任何已知 CLI 时返回 null */
@@ -76,20 +78,7 @@ interface RawTab {
 	selected: boolean;
 }
 
-/** 活体探测的 TTL 缓存(默认 8 秒):TUI 每 3 秒刷新,没有缓存会反复起 PowerShell */
-export async function probeLive(options: { noCache?: boolean; ttlMs?: number } = {}): Promise<LiveSnapshot> {
-	const ttlMs = options.ttlMs ?? ttlFromEnv("AIS_LIVE_TTL_MS", 8000);
-	const cacheOptions = { path: join(cacheDir(), "live.json"), ttlMs };
-	if (!options.noCache) {
-		const cached = await readCache<LiveSnapshot>(cacheOptions);
-		if (cached) return cached;
-	}
-	const fresh = await probeLiveUncached();
-	if (!options.noCache) void writeCache(cacheOptions, fresh);
-	return fresh;
-}
-
-async function probeLiveUncached(): Promise<LiveSnapshot> {
+export async function probeLiveUncached(): Promise<LiveSnapshot> {
 	let raw: { processes?: RawProcess[]; tabs?: RawTab[]; consoleWindows?: RawConsoleWindow[] };
 	try {
 		const stdout = await runPowerShell(SCRIPT, []);

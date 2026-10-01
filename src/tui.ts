@@ -18,10 +18,13 @@ import { buildTuiState, renderScreen, stripAnsi, type FilterKind, type TuiState 
 import { fullTitle } from "./format.ts";
 
 const REFRESH_MS = 3000;
+/** 界面的加载参数:探测与扫描都比刷新间隔慢,所以两者都允许"先渲染旧的、后台刷新" */
+const TUI_LIVE_TTL_MS = 15000;
+const TUI_LOAD = { staleLive: true, staleSessions: true, liveTtlMs: TUI_LIVE_TTL_MS } as const;
 const REDRAW_THROTTLE_MS = 80;
 
 export interface TuiOptions {
-	load: (options?: { liveTtlMs?: number }) => Promise<SessionView[]>;
+	load: (options?: { liveTtlMs?: number; staleLive?: boolean; staleSessions?: boolean }) => Promise<SessionView[]>;
 	filter?: FilterKind;
 	/** 要加载的拓展(默认:环境变量/配置文件/内置默认列表) */
 	extensions?: string[];
@@ -34,6 +37,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
 	const stdin = process.stdin;
 	const stdout = process.stdout;
+	const optionsLoader = options.load;
 	const ui = { filter: options.filter ?? "all", query: "", searchMode: false, cursor: 0 };
 	let allRows: SessionView[] = [];
 	let message = "";
@@ -84,9 +88,9 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		},
 	});
 
-	const reload = async (): Promise<void> => {
+	const reload = async (options?: { staleLive?: boolean; staleSessions?: boolean; liveTtlMs?: number }): Promise<void> => {
 		try {
-			allRows = await options.load();
+			allRows = await optionsLoader(options);
 		} catch (error) {
 			message = `刷新失败: ${error instanceof Error ? error.message : String(error)}`;
 		}
@@ -160,15 +164,16 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	});
 
 	screen.enter();
-	// 先画一帧(立即有界面),再去加载 —— 冷缓存时探测/扫描要几秒,不该让用户盯着空白
-	message = "正在探测会话…";
+	// 先画一帧(立即有界面),再用上次快照渲染 —— 实测 PowerShell 探测 1.2-16 秒、
+	// 会话扫描 0.3-1.2 秒,首帧不该为它们空等;真实数据由后台刷新在 1-2 秒后补上
+	message = "正在加载(后台刷新中)…";
 	draw(true);
-	await reload();
+	await reload(TUI_LOAD);
 	if (failures.length) message = `拓展加载失败: ${failures.map((entry) => `${entry.name}(${entry.error})`).join("; ")}`;
-	else if (message === "正在探测会话…") message = "";
+	else if (message === "正在加载(后台刷新中)…") message = "";
 	draw(true);
 	screen.startTicker(() => {
-		void reload().then(() => draw());
+		void reload(TUI_LOAD).then(() => draw());
 	}, REFRESH_MS);
 
 	await new Promise<void>((resolve) => {

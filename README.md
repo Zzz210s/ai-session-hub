@@ -277,14 +277,39 @@ Everything is cached on disk under `~/.ai-session-hub/cache/`, keyed by file fin
 | Operation | Cold | Warm |
 |---|---|---|
 | `ais list` (71 sessions, live probe) | ~4.6 s | **~0.25 s** |
-| TUI first frame / list ready | ~1.2 s / ~2.2 s | ~1.2 s / ~2.2 s |
+| TUI first frame (stale-while-revalidate) | **~0.4 s** | **~0 s** |
+| `ais list` strict path (waits for a real probe) | 1.2-16 s | same (PowerShell variance) |
 
 What made it slow, and what was fixed:
 
 1. **UIA enumerated every top-level window** (`TrueCondition`) while probing Windows Terminal tabs — each child property read is a cross-process call, so the probe took ~15 s. It now filters by window class server-side: **~1.3 s**.
 2. **`Get-CimInstance Win32_Process` without a server-side filter** transferred ~350 rows; it now filters by process name.
 3. **Nothing was cached** — the TUI re-ran the whole probe every 3 s. Now: live probe cached for 8 s (`AIS_LIVE_TTL_MS`; the TUI uses 15 s), and per-file parse results cached by size+mtime (`AIS_SCAN_TTL_MS`, default 24 h).
-4. **The TUI waited for the first load before painting** — it now paints immediately ("正在探测会话…") and fills in when the load lands.
+4. **The TUI waited for the first load before painting** — it now paints immediately and **renders the previous snapshot while refreshing in the background** (see below).
+
+### Stale-while-revalidate
+
+The PowerShell probe measures **1.2-2.3 s** (6-16 s cold) and the session scan 0.3-1.2 s on this machine. Blocking the first frame on either is exactly the "meaningless blank stretch after startup".
+
+Both TUI loads (first frame and the 3-second refresh) therefore pass `staleLive` + `staleSessions`:
+
+- cache is fresh → use it, zero cost
+- cache is expired but younger than 10 minutes (`AIS_LIVE_STALE_MS`) → **render it right away**, re-probe/re-scan in the background; the next refresh (≤3 s later) is current
+- cache is too old or missing → fetch synchronously
+
+The CLI (`ais list` / `ais doctor`) passes neither flag: it always probes and scans for real.
+
+### Startup self-update progress
+
+Every step prints a start line and a result line (with elapsed time; failures carry the reason), so updates are no longer a silent wait:
+
+```
+[ais] 执行 4 项更新…
+[ais] 更新 pi 本体…
+[ais] 更新 pi 本体 完成(3.2s)
+[ais] 更新 pi 扩展 失败(4.1s): 需要先 ...
+[ais] 启动前自更新: 3/4 步完成,失败: 更新 pi 扩展
+```
 
 Cache controls:
 
@@ -292,6 +317,7 @@ Cache controls:
 ais list --no-cache        # bypass both caches once
 AIS_CACHE=0 ais            # disable caching entirely
 AIS_LIVE_TTL_MS=3000       # live probe TTL (0 = always probe)
+AIS_LIVE_STALE_MS=60000    # how old a cached live snapshot may be for the first TUI frame
 AIS_SCAN_TTL_MS=0          # disable the per-file scan cache
 rm -rf ~/.ai-session-hub/cache   # clear
 ```

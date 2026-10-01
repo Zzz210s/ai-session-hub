@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createDeleteFlow } from "../src/tui-delete.ts";
 
-/** 等条件成立(避免并行跑测试时固定 sleep 不够) */
-async function waitFor(condition, timeoutMs = 2000) {
+/** 等条件成立(避免并行跑测试时固定 sleep 不够;planDelete 会起 PowerShell 探测回收站支持,负载高时要留足) */
+async function waitFor(condition, timeoutMs = 15000) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		if (condition()) return true;

@@ -97,6 +97,11 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Ste
 	return steps; // 独立程序:不拉别人的仓库,也不跑别人的 setup.sh
 }
 
+/** 毫秒 → "12.3s" / "820ms" */
+export function formatDuration(ms: number): string {
+	return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
 /** 启动前自更新:不检测,直接跑全部更新命令;返回一行摘要(失败不抛) */
 export async function startPreflight(options: StartOptions = {}): Promise<string | undefined> {
 	try {
@@ -105,7 +110,12 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 		if (steps.length === 0) return undefined;
 		const say = options.onProgress ?? ((message: string) => process.stdout.write("[ais] " + message + "\n"));
 		say("执行 " + steps.length + " 项更新…");
-		const result = await preflight({ steps, onProgress: options.onProgress });
+		const result = await preflight({
+			steps,
+			onProgress: say,
+			onStepDone: ({ label, ok, ms, detail }) =>
+				say(ok ? `${label} 完成(${formatDuration(ms)})` : `${label} 失败(${formatDuration(ms)})${detail ? ": " + detail : ""}`),
+		});
 		const failed = result.steps.filter((step) => !step.ok);
 		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)");
 	} catch (error) {
