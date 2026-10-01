@@ -7,7 +7,7 @@
  */
 
 import { homedir } from "node:os";
-import { cachedScan } from "../cache.ts";
+import { cachedScan } from "./cache.ts";
 import { basename, join } from "node:path";
 import type { SessionRecord } from "../model.ts";
 import {

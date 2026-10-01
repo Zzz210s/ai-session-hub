@@ -1,8 +1,8 @@
 /**
- * 汇总入口的缓存策略单测(注入假 loader,不碰真实扫描/PowerShell,故在并行测试下也稳定):
- *  - TTL 内的缓存立刻返回,不再加载
- *  - 过期缓存先渲染并标记"刷新中",后台把新结果写回
- *  - 不带 staleSessions 时忽略缓存,直接加载(CLI 语义)
+ * 板面缓存单测(注入假扫描与假指纹,不碰真实扫描/PowerShell):
+ *  - 列表没变 → 直接用缓存,不重扫(命中)
+ *  - 结构指纹变了 / 超过最长陈旧时间 → 先渲染缓存,后台重扫
+ *  - 不带 staleSessions(CLI 语义)→ 忽略缓存,直接扫
  */
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,21 +13,30 @@ import { loadViews } from "../src/hub.ts";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const view = (id) => ({ tool: "pi", id, name: id, state: "stored", attention: false });
-const result = (ids) => ({ views: ids.map(view), live: { processes: [], tabs: [], consoleWindows: [] }, heartbeatCount: 0 });
+const record = (id) => ({
+	tool: "pi",
+	id,
+	file: `C:/sessions/${id}.jsonl`,
+	cwd: "C:\\work\\proj",
+	name: id,
+	topic: id,
+	firstMessage: "",
+	createdAt: new Date("2026-10-01T10:00:00Z"),
+	updatedAt: new Date("2026-10-01T11:00:00Z"),
+});
 
-function cacheFile(value, ageMs) {
-	const dir = mkdtempSync(join(tmpdir(), "ais-views-"));
+function boardCache(sessions, { ageMs = 0, signature = "sig-1" } = {}) {
+	const dir = mkdtempSync(join(tmpdir(), "ais-board-"));
 	const path = join(dir, "views.json");
-	writeFileSync(path, JSON.stringify({ at: Date.now() - ageMs, value }), "utf8");
+	writeFileSync(path, JSON.stringify({ at: Date.now() - ageMs, value: { signature, at: Date.now() - ageMs, sessions } }), "utf8");
 	return path;
 }
 
-function cachedIds(path) {
-	return JSON.parse(readFileSync(path, "utf8")).value.map((v) => v.id);
+function cachedSessions(path) {
+	return JSON.parse(readFileSync(path, "utf8")).value.sessions.map((s) => s.id);
 }
 
-async function waitFor(predicate, timeoutMs = 15000) {
+async function waitFor(predicate, timeoutMs = 5000) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		if (predicate()) return true;
@@ -36,42 +45,70 @@ async function waitFor(predicate, timeoutMs = 15000) {
 	return false;
 }
 
-test("staleSessions:TTL 内的缓存立刻返回,不再加载", async () => {
-	const path = cacheFile([view("cached")], 100);
-	let loads = 0;
+function harness({ scanResult, signature = "sig-1" }) {
+	const calls = { scans: 0 };
+	const scan = async () => {
+		calls.scans++;
+		return scanResult();
+	};
+	return { calls, options: { noLive: true, staleSessions: true, scan, signature: () => signature } };
+}
+
+test("列表没变:直接用缓存,一次扫描都不做", async () => {
+	const path = boardCache([record("a")]);
+	const { calls, options } = harness({ scanResult: () => [record("fresh")] });
 	const started = Date.now();
-	const result = await loadViews({ staleSessions: true, viewsCachePath: path, loader: async () => (loads++, result(["fresh"])) });
-	assert.equal(Date.now() - started < 500, true, "不该等加载");
-	assert.deepEqual(result.views.map((v) => v.id), ["cached"]);
-	assert.equal(loads, 0);
+	const result = await loadViews({ ...options, viewsCachePath: path });
+	assert.equal(calls.scans, 0, "指纹没变不该重扫");
+	assert.deepEqual(result.views.map((v) => v.id), ["a"]);
+	assert.equal(Date.now() - started < 500, true, "不该等待扫描");
 });
 
-test("staleSessions:过期缓存先渲染(标记刷新中),后台把新结果写回", async () => {
-	const path = cacheFile([view("old")], 60_000);
-	const loaded = await loadViews({ staleSessions: true, viewsCachePath: path, loader: async () => result(["new1", "new2"]) });
-	assert.deepEqual(loaded.views.map((v) => v.id), ["old"], "先给旧快照");
-	assert.equal(loaded.live.stale, true, "应告知界面这是刷新中的数据");
-	assert.ok(await waitFor(() => cachedIds(path).length === 2), "后台加载应把新结果写回缓存");
+test("结构指纹变了:先给缓存,再后台重扫回写", async () => {
+	const path = boardCache([record("old")], { signature: "sig-1" });
+	const { calls, options } = harness({ scanResult: () => [record("new1"), record("new2")], signature: "sig-2" });
+	const result = await loadViews({ ...options, viewsCachePath: path });
+	assert.deepEqual(result.views.map((v) => v.id), ["old"], "先渲染缓存");
+	assert.ok(await waitFor(() => calls.scans === 1), "应触发一次后台重扫");
+	assert.ok(await waitFor(() => cachedSessions(path).length === 2), "后台重扫应回写缓存");
 });
 
-test("不带 staleSessions:忽略缓存,直接加载(CLI 语义)", async () => {
-	const path = cacheFile([view("cached")], 100);
-	const loaded = await loadViews({ viewsCachePath: path, loader: async () => result(["live1", "live2", "live3"]) });
-	assert.equal(loaded.views.length, 3, "应返回刚加载的结果,而不是缓存那一条");
-	assert.equal(loaded.live.stale, undefined);
+test("超过最长陈旧时间(60 秒)也重扫,即使指纹没变", async () => {
+	const path = boardCache([record("old")]);
+	const { calls, options } = harness({ scanResult: () => [record("new")] });
+	await loadViews({ ...options, viewsCachePath: path, signature: () => "sig-1" });
+	assert.equal(calls.scans, 0, "新鲜缓存不重扫");
+
+	const oldPath = boardCache([record("ancient")], { ageMs: 61_000 });
+	const old = harness({ scanResult: () => [record("current")] });
+	const result = await loadViews({ ...old.options, viewsCachePath: oldPath });
+	assert.deepEqual(result.views.map((v) => v.id), ["ancient"], "先渲染旧的");
+	assert.ok(await waitFor(() => old.calls.scans === 1), "超过 60 秒应重扫");
 });
 
-test("缓存太旧(超过 10 分钟)不算可用,直接加载", async () => {
-	const path = cacheFile([view("ancient")], 3600_000);
-	const loaded = await loadViews({ staleSessions: true, viewsCachePath: path, loader: async () => result(["current"]) });
-	assert.deepEqual(loaded.views.map((v) => v.id), ["current"]);
+test("不带 staleSessions:忽略缓存,直接扫描(CLI 语义)", async () => {
+	const path = boardCache([record("cached")]);
+	const { calls, options } = harness({ scanResult: () => [record("live1"), record("live2")] });
+	const result = await loadViews({ ...options, staleSessions: false, viewsCachePath: path });
+	assert.equal(calls.scans, 1);
+	assert.equal(result.views.length, 2);
 });
 
-test("noCache:既不读也不写视图缓存", async () => {
-	const path = cacheFile([view("cached")], 100);
+test("noCache:不读也不写缓存", async () => {
+	const path = boardCache([record("cached")]);
 	const before = readFileSync(path, "utf8");
-	const loaded = await loadViews({ noCache: true, staleSessions: true, viewsCachePath: path, loader: async () => result(["direct"]) });
-	assert.deepEqual(loaded.views.map((v) => v.id), ["direct"]);
-	await sleep(50);
-	assert.equal(readFileSync(path, "utf8"), before, "缓存文件不该被改写");
+	const { options } = harness({ scanResult: () => [record("direct")] });
+	const result = await loadViews({ ...options, noCache: true, viewsCachePath: path });
+	assert.deepEqual(result.views.map((v) => v.id), ["direct"]);
+	assert.equal(readFileSync(path, "utf8"), before);
+});
+
+test("旧格式缓存(裸视图数组)视为无效,直接扫描后升级为新格式", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "ais-board-"));
+	const path = join(dir, "views.json");
+	writeFileSync(path, JSON.stringify({ at: Date.now(), value: [{ tool: "pi", id: "legacy" }] }), "utf8");
+	const { calls, options } = harness({ scanResult: () => [record("新格式")] });
+	const result = await loadViews({ ...options, viewsCachePath: path });
+	assert.equal(calls.scans, 1, "旧格式必须重扫");
+	assert.deepEqual(cachedSessions(path), ["新格式"], "应升级为新格式");
 });

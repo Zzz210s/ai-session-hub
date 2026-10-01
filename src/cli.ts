@@ -31,7 +31,7 @@ import { describeToolColors } from "./theme.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
 import { deleteSession, planDelete, trashDir } from "./delete.ts";
-import { flushScanCache } from "./cache.ts";
+import { flushScanCache } from "./scan/cache.ts";
 
 export function toJson(views: SessionView[]): string {
 	return JSON.stringify(
@@ -173,7 +173,7 @@ async function main(): Promise<void> {
 	if (pre) console.log(pre);
 	await runTui({
 		load: async (options) =>
-			(await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs, staleLive: options?.staleLive, staleSessions: options?.staleSessions })).views,
+			(await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs, staleLive: options?.staleLive, staleSessions: options?.staleSessions, neverBlockLive: options?.neverBlockLive })).views,
 		filter: args.liveOnly ? "running" : "all",
 	});
 }

@@ -279,7 +279,7 @@ Everything is cached on disk under `~/.ai-session-hub/cache/`, keyed by file fin
 | Operation | Cold | Warm |
 |---|---|---|
 | `ais list` (71 sessions, live probe) | ~4.6 s | **~0.25 s** |
-| TUI first frame (stale-while-revalidate) | **~0.4 s** | **~0 s** |
+| TUI first frame (stale-while-revalidate) | **~0.3 s** | **~0 s** |
 | `ais list` strict path (waits for a real probe) | 1.2-16 s | same (PowerShell variance) |
 | `ais list --fast` (live snapshot <=60 s old) | ~0.2 s | ~0.2 s |
 
@@ -301,6 +301,26 @@ Both TUI loads (first frame and the 3-second refresh) therefore pass `staleLive`
 - cache is too old or missing → fetch synchronously
 
 The CLI (`ais list` / `ais doctor`) passes neither flag: it always probes and scans for real.
+
+### Cache tiers and hit rate (measured)
+
+The board refreshes every 3 seconds while the two expensive jobs are the session scan (0.3-2 s) and the PowerShell probe (1.2-2 s). Caching is therefore split by **how fast the data actually changes**:
+
+| Data | Churn | Strategy | Measured |
+|---|---|---|---|
+| Session list (scan result) | low (only on create/delete/new content) | structural fingerprint (session dir mtimes) + 60 s ceiling; no rescan when unchanged | 1 rescan per 20 refreshes |
+| Heartbeats + probe snapshot (running/working/waiting) | high | read fresh every time (~25 ms); the probe keeps its own 15 s snapshot cache | board state never lags |
+| Per-session-file parse | active sessions keep growing | cached by size+mtime, **incremental**: only the bytes appended since last read | cold 10-24 s -> **~2 s**, warm 0.2 s |
+
+The earlier implementation cached the whole view under a fixed 5 s TTL: measured **55% hit rate** at a 3 s refresh — a pointless background rescan every 5 s even when nothing changed. Now:
+
+```
+views cache hit rate   55% -> 95% (19 of 20 refreshes served from cache)
+single load            30-70 ms (cold first frame under 0.3 s)
+session scan           cold 1-2 s, warm 0.2 s
+```
+
+Session-name lookup also went from a full streaming scan to a three-tier strategy (appended bytes -> last 8 MB -> first 256 KB): a 197 MB session file used to take 10+ s to scan, now 20 ms.
 
 ### Heartbeat registry GC
 

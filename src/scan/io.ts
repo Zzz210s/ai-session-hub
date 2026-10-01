@@ -114,31 +114,55 @@ export function looksLikePayload(text: string): boolean {
 }
 
 /**
- * 流式扫描超大文件,收集所有含指定标记的 JSON 行(如 pi 的 session_info 可能在文件任意位置)。
- * 只在内存里保留小块缓冲,不做全量 JSON 解析。
+ * 在指定字节范围 [start, end) 内找含标记的行(按文件顺序返回)。
+ * 供增量扫描使用:文件是追加写的,所以只需看上次看完之后的新增部分。
  */
-export async function scanMarkedLines(file: string, marker: string, chunkSize = 4 * 1024 * 1024): Promise<string[]> {
-	const handle = await open(file, "r");
+export async function scanMarkedRange(file: string, marker: string, start: number, end: number, chunkSize = 4 * 1024 * 1024): Promise<string[]> {
 	const out: string[] = [];
+	const from = Math.max(0, start);
+	const to = Math.max(from, end);
+	if (to <= from) return out;
+	const handle = await open(file, "r");
 	try {
 		let carry = "";
-		const buf = Buffer.alloc(chunkSize);
-		let position = 0;
-		while (true) {
-			const { bytesRead } = await handle.read(buf, 0, chunkSize, position);
+		const buf = Buffer.alloc(Math.min(chunkSize, to - from));
+		let position = from;
+		while (position < to) {
+			const want = Math.min(buf.length, to - position);
+			const { bytesRead } = await handle.read(buf, 0, want, position);
 			if (bytesRead <= 0) break;
 			position += bytesRead;
 			const text = carry + buf.subarray(0, bytesRead).toString("utf8");
 			const lines = text.split("\n");
 			carry = lines.pop() ?? "";
-			for (const line of lines) {
-				if (line.includes(marker)) out.push(line);
-			}
-			if (out.length > 64) out.splice(0, out.length - 64);
+			for (const line of lines) if (line.includes(marker)) out.push(line);
 		}
 		if (carry.includes(marker)) out.push(carry);
 	} finally {
 		await handle.close();
 	}
 	return out;
+}
+
+/**
+ * 从文件**尾部往前**分块找标记,遇到第一块含标记就停 —— 因为调用方要的是"最后一次出现"。
+ * 好处:大多数会话文件里 session_info 就在末尾附近,一下就读完,不必全文流式扫描
+ * (实测有个 195MB 的活跃会话文件,全文扫描要 13 秒)。
+ */
+export async function scanMarkedLinesBackwards(file: string, marker: string, chunkSize = 4 * 1024 * 1024, maxChunks = 2): Promise<string[]> {
+	let size = 0;
+	try {
+		size = (await stat(file)).size;
+	} catch {
+		return [];
+	}
+	let end = size;
+	for (let chunk = 0; chunk < maxChunks && end > 0; chunk++) {
+		const start = Math.max(0, end - chunkSize);
+		const lines = await scanMarkedRange(file, marker, start, end);
+		if (lines.length > 0) return lines;
+		if (start === 0) break;
+		end = start;
+	}
+	return [];
 }
