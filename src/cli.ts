@@ -181,7 +181,7 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const pre = await cliPreflight({ update: process.argv.includes("--update"), noUpdate: process.argv.includes("--no-update") });
+	const pre = await import("./preflight-run.ts").then((m) => m.startPreflight({ force: process.argv.includes("--update"), disabled: process.argv.includes("--no-update") })).catch(() => undefined);
 	if (pre) console.log(pre);
 	await runTui({
 		load: async (options) => (await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs })).views,
