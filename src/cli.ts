@@ -25,52 +25,12 @@ import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
 import { configuredExtensions } from "./extensions.ts";
-import { cliPreflight } from "./preflight.ts";
+import { parseArgs } from "./args.ts";
 import { describeToolColors } from "./theme.ts";
 import { focusSession, resumeInNewTab } from "./actions.ts";
 import { runTui } from "./tui.ts";
 import { deleteSession, planDelete, trashDir } from "./delete.ts";
 import { flushScanCache } from "./cache.ts";
-
-interface Args {
-	command: string;
-	query: string;
-	json: boolean;
-	limit: number;
-	noLive: boolean;
-	tools?: Tool[];
-	liveOnly: boolean;
-	/** delete 命令需显式 --yes 才真正删除(默认只预览) */
-	yes: boolean;
-	/** 绕过缓存(强制重新探测) */
-	noCache: boolean;
-}
-
-const TOOLS: Tool[] = ["pi", "claude", "opencode"];
-
-export function parseArgs(argv: string[]): Args {
-	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false, noCache: false };
-	const rest: string[] = [];
-	for (const token of argv) {
-		if (token === "--json") args.json = true;
-		else if (token === "--no-live") args.noLive = true;
-		else if (token === "--live") args.liveOnly = true;
-		else if (token === "--yes" || token === "-y") args.yes = true;
-		else if (token === "--no-cache") args.noCache = true;
-		else if (token.startsWith("--limit")) args.limit = Number(token.split("=")[1] ?? 40) || 40;
-		else if (token.startsWith("--tool=")) {
-			const list = token
-				.split("=")[1]
-				.split(",")
-				.map((t) => t.trim())
-				.filter((t): t is Tool => (TOOLS as string[]).includes(t));
-			if (list.length) args.tools = list;
-		} else if (!args.command) args.command = token;
-		else rest.push(token);
-	}
-	args.query = rest.join(" ");
-	return args;
-}
 
 export function toJson(views: SessionView[]): string {
 	return JSON.stringify(
@@ -181,7 +141,9 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const pre = await import("./preflight-run.ts").then((m) => m.startPreflight({ force: process.argv.includes("--update"), disabled: process.argv.includes("--no-update") })).catch(() => undefined);
+	const pre = await import("./preflight-run.ts")
+		.then((m) => m.startPreflight({ disabled: args.noUpdate }))
+		.catch(() => undefined);
 	if (pre) console.log(pre);
 	await runTui({
 		load: async (options) => (await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs })).views,

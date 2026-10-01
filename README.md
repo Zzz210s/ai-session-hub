@@ -50,10 +50,26 @@ ais                                 # open the TUI board
 ```
 
 Zero required dependencies for the core: listing, filtering, focusing and attach need only Node ≥ 24, Windows Terminal and PowerShell. The **split-pane** feature needs the optional `tui-panes` package:
-
 ```bash
 npm install          # installs tui-panes (optionalDependency)
 ```
+
+## Startup self-update
+
+Before `ais` opens the board it runs the update commands for every AI CLI and its plugins, then starts sessions on the refreshed environment — so a session never runs on a stale CLI or plugin set.
+
+| Order | Command | Failure handling |
+|---|---|---|
+| 1 | `pi update` | **strict**: a failure is reported in the summary |
+| 2 | `pi update --extensions` | **strict** |
+| 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **best effort**: a step is only planned for an installed CLI, and a failure never blocks startup |
+
+- **No version or change detection**: the same sequence runs on every launch (nothing to install means it just no-ops)
+- **Standalone**: it only touches the CLIs and their plugins — it never `git pull`s another repo or runs someone else's `setup.sh` (pinned by `test/standalone.test.js`)
+- **Skip it**: `ais --no-update` or `AIS_NO_UPDATE=1 ais`
+- **Never blocks**: a failing step only shows up in the summary, e.g. `[ais] 启动前自更新: 3/4 步完成,失败: 更新 pi 扩展`
+- **Windows specifics**: every command goes through the **absolute Git Bash** path (a bare `bash` can land in WSL), and `.cmd` targets are forwarded via `cmd.exe` (`execFile` cannot run `.cmd` — the reason “更新 pi 扩展” kept failing earlier)
+- **Visible exit reason**: the TUI prints e.g. `已退出(q)` on exit, telling a keypress apart from an abnormal exit
 
 ## Keys
 
@@ -71,7 +87,7 @@ npm install          # installs tui-panes (optionalDependency)
 | `1` `2` `3` `4` | filter: running / needs attention / all / historical |
 | `/` | search (name, directory, tool, session id; space-separated terms) |
 | `r` | refresh now |
-| `q` / `Esc` | quit |
+| `q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
 
 ## Deleting a session
 
@@ -99,6 +115,7 @@ ais list --live          # only running sessions
 ais list --json          # machine-readable (sessionFile / tab / resumeCommand)
 ais doctor               # discovery diagnostics: per-tool counts, live processes, terminal tabs, heartbeats
 ais focus  <query>       # focus a running session's window
+ais --no-update          # skip the startup self-update (same as AIS_NO_UPDATE=1)
 ```
 
 ## Per-tool colors

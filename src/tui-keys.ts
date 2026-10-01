@@ -36,7 +36,8 @@ export interface KeyContext {
 	/** 确认/取消待确认操作 */
 	answerConfirm(accepted: boolean): void;
 	refresh(): void | Promise<void>;
-	quit(): void;
+	/** 退出;why 用于退出时告知原因(q / ctrl-c / escape) */
+	quit(why: string): void;
 	redraw(): void;
 }
 
@@ -67,7 +68,7 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 			}
 			return;
 		}
-		if (ch === "q") return ctx.quit();
+		if (ch === "q") return ctx.quit("q");
 		if (ch === "/") {
 			ctx.setSearching(true);
 			ctx.redraw();
@@ -97,7 +98,7 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 	// 功能键
 	switch (key) {
 		case "quit":
-			return ctx.quit();
+			return ctx.quit("ctrl-c");
 		case "escape":
 			if (ctx.isSearching()) {
 				ctx.setSearching(false);
@@ -105,7 +106,7 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 				ctx.redraw();
 				return;
 			}
-			return ctx.quit();
+			return ctx.quit("escape");
 		case "enter":
 			if (ctx.isSearching()) {
 				ctx.setSearching(false);

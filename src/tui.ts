@@ -39,7 +39,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	let allRows: SessionView[] = [];
 	let message = "";
 	let drawTimer: ReturnType<typeof setTimeout> | null = null;
-	let done: () => void = () => {};
+	let done: (why: string) => void = () => {};
 
 	/** 已加载的拓展(加载失败只提示,不影响核心) */
 	const loaded = await loadExtensions(options.extensions);
@@ -174,7 +174,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			await reload();
 			draw(true);
 		},
-		quit: () => done(),
+		quit: (why) => done(why),
 		redraw: () => draw(true),
 	});
 
@@ -197,11 +197,11 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	}, REFRESH_MS);
 
 	await new Promise<void>((resolve) => {
-		done = (): void => {
+		done = (why: string): void => {
 			input.dispose();
 			if (drawTimer) clearTimeout(drawTimer);
 			for (const extension of extensions) extension.dispose?.();
-			screen.leave(message || "已退出");
+			screen.leave(message || `已退出(${why})`);
 			resolve();
 		};
 	});

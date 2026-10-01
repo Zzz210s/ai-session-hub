@@ -48,6 +48,23 @@ ais                  # 打开 TUI 看板
 
 **零依赖**:核心与 TUI 只用 Node 内建能力(无 npm 依赖,不需要 `npm install`)。要求 Node ≥ 24(用到原生 TypeScript 执行与 `node:sqlite`)、Windows Terminal、PowerShell(系统自带)。
 
+## 启动前自更新
+
+`ais` 打开看板**之前**,先把所有 AI CLI 及其插件的更新命令跑一遍,再用更新后的环境启动会话 —— 免得会话跑在旧 CLI / 旧插件上。
+
+| 顺序 | 命令 | 失败处理 |
+|---|---|---|
+| 1 | `pi update` | **严格**:失败会出现在摘要里 |
+| 2 | `pi update --extensions` | **严格** |
+| 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **尽力而为**:只给装了的排步骤,失败不拦住启动 |
+
+- **不做版本/变更检测**:每次按固定顺序跑一遍(有更新就装,没有就是空转)
+- **独立程序**:只动 CLI 与它们的插件 —— 不 `git pull` 别人的仓库,也不跑别人的 `setup.sh`(由 `test/standalone.test.js` 固化)
+- **跳过**:`ais --no-update` 或 `AIS_NO_UPDATE=1 ais`
+- **不阻断**:任何一步失败只写进摘要,会话照常启动,例如 `[ais] 启动前自更新: 3/4 步完成,失败: 更新 pi 扩展`
+- **Windows 细节**:命令统一经 **Git Bash 绝对路径**执行(裸 `bash` 可能落到 WSL),`.cmd` 交给 `cmd.exe` 转发(`execFile` 不认 `.cmd` —— 这正是早前“更新 pi 扩展”一直失败的原因)
+- **退出原因可见**:TUI 退出时打印 `已退出(q)`,区分按键退出与异常退出
+
 ## 按键
 
 | 键 | 动作 |
@@ -64,7 +81,7 @@ ais                  # 打开 TUI 看板
 | `x` / `Ctrl+W` | 关闭面板;`Ctrl+Q` 面板聚焦时回到列表 |
 | `/` | 搜索(名称/目录/工具/会话 id,空格分隔多词) |
 | `r` | 手动刷新 |
-| `q` / `Esc` | 退出 |
+| `q` / `Esc` / `Ctrl+C` | 退出(退出时打印原因,如 `已退出(q)`) |
 
 ## 删除会话
 
@@ -90,6 +107,7 @@ ais list --live          # 只看运行中的会话
 ais list --json          # 机器可读(含 sessionFile / tab / resumeCommand)
 ais doctor               # 探测诊断:各工具会话数、活体进程、终端标签、心跳
 ais focus  <查询>        # 聚焦运行中的会话
+ais --no-update          # 跳过启动前自更新(等价 AIS_NO_UPDATE=1)
 ```
 
 ## 按工具着色

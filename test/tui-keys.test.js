@@ -38,8 +38,8 @@ function fakeContext(overrides = {}) {
 		async refresh() {
 			calls.push("refresh");
 		},
-		quit() {
-			calls.push("quit");
+		quit(why) {
+			calls.push(`quit:${why}`);
 		},
 		redraw() {
 			calls.push("redraw");
@@ -84,7 +84,7 @@ test("dispatchKey:动作键与退出", async () => {
 	await dispatchKey("enter", ctx);
 	await dispatchKey({ char: "q" }, ctx);
 	await dispatchKey("quit", ctx);
-	assert.deepEqual(ctx.calls, ["act:attach", "act:focus", "act:copy", "act:smart", "quit", "quit"]);
+	assert.deepEqual(ctx.calls, ["act:attach", "act:focus", "act:copy", "act:smart", "quit:q", "quit:ctrl-c"]);
 });
 
 test("dispatchKey:搜索态下字符进入查询而非触发动作", async () => {
@@ -112,7 +112,7 @@ test("dispatchKey:搜索态下 Enter 结束搜索,ESC 结束搜索并清空", as
 test("dispatchKey:非搜索态 ESC 退出程序", async () => {
 	const ctx = fakeContext();
 	await dispatchKey("escape", ctx);
-	assert.deepEqual(ctx.calls, ["quit"]);
+	assert.deepEqual(ctx.calls, ["quit:escape"]);
 });
 
 test("dispatchKey:待确认操作只接受 y / n / Esc", async () => {
