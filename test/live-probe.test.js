@@ -76,3 +76,20 @@ test("probeLive:noCache 只探测不读也不写缓存", async () => {
 	assert.equal(result.mark, "live");
 	assert.equal(JSON.parse(readFileSync(path, "utf8")).value.mark, "cached", "不应覆盖缓存");
 });
+
+test("resolvePowerShellEngine:默认用系统自带 powershell.exe,可用 AIS_PWSH 指定 pwsh", async () => {
+	const { resolvePowerShellEngine } = await import("../src/live/windows.ts");
+	// 本机实测:pwsh 7 比 powershell.exe 慢(1714ms vs 1363ms 平均),所以默认不切
+	assert.equal(resolvePowerShellEngine({}), "powershell.exe");
+	assert.equal(resolvePowerShellEngine({ AIS_PWSH: "0" }), "powershell.exe");
+	assert.equal(resolvePowerShellEngine({ AIS_PWSH: "auto" }), "powershell.exe");
+	assert.equal(resolvePowerShellEngine({ AIS_PWSH: "C:/tools/pwsh.exe" }), "C:/tools/pwsh.exe");
+});
+
+test("findPwsh:能从候选路径或 PATH 里找到 pwsh(仅用于提示)", async () => {
+	const { findPwsh } = await import("../src/live/windows.ts");
+	const env = { ProgramFiles: "C:/PF", LOCALAPPDATA: "C:/LA", USERPROFILE: "C:/U", PATH: "C:/bin;D:/tools" };
+	assert.equal(findPwsh(env, (p) => p === "C:/PF/PowerShell/7/pwsh.exe"), "C:/PF/PowerShell/7/pwsh.exe");
+	assert.equal(findPwsh(env, (p) => p === "D:/tools/pwsh.exe"), "D:/tools/pwsh.exe");
+	assert.equal(findPwsh(env, () => false), undefined);
+});

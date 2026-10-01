@@ -18,16 +18,19 @@ export interface Args {
 	noCache: boolean;
 	/** 跳过启动前自更新(等价 AIS_NO_UPDATE=1) */
 	noUpdate: boolean;
+	/** 快速模式:实况允许用≤ 60 秒的旧快照,不等真探测 */
+	fast: boolean;
 }
 
 export const TOOLS: Tool[] = ["pi", "claude", "opencode"];
 
 export function parseArgs(argv: string[]): Args {
-	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false, noCache: false, noUpdate: false };
+	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false, noCache: false, noUpdate: false, fast: false };
 	const rest: string[] = [];
 	for (const token of argv) {
 		if (token === "--json") args.json = true;
 		else if (token === "--no-live") args.noLive = true;
+		else if (token === "--fast") args.fast = true;
 		else if (token === "--live") args.liveOnly = true;
 		else if (token === "--no-update" || token === "--skip-update") args.noUpdate = true;
 		else if (token === "--yes" || token === "-y") args.yes = true;

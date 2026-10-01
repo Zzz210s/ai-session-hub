@@ -23,6 +23,7 @@ import type { SessionView, Tool } from "./model.ts";
 import { loadViews } from "./hub.ts";
 import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
+import { countHeartbeats, sweepHeartbeats } from "./live/heartbeat.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
 import { configuredExtensions } from "./extensions.ts";
 import { parseArgs } from "./args.ts";
@@ -57,7 +58,14 @@ export function toJson(views: SessionView[]): string {
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
-	const { views, live, heartbeatCount } = await loadViews({ tools: args.tools, noLive: args.noLive, noCache: args.noCache });
+	// --fast:接受 ≤60 秒的旧实况快照,不等真探测(通常 0.4-0.6 秒出结果);--no-live 则完全不探测
+	const { views, live, heartbeatCount } = await loadViews({
+		tools: args.tools,
+		noLive: args.noLive,
+		noCache: args.noCache,
+		staleLive: args.fast,
+		liveStaleMs: args.fast ? 60_000 : undefined,
+	});
 
 	if (args.command === "doctor") {
 		const summary = summarize(views);
@@ -67,7 +75,8 @@ async function main(): Promise<void> {
 		console.log(`活体进程: ${live.processes.length}(${live.processes.map((p) => `${p.tool}#${p.pid}`).join(", ") || "-"})`);
 		console.log(`终端标签: ${live.tabs.length}`);
 		for (const tab of live.tabs) console.log(`  [${tab.index}]${tab.selected ? "*" : " "} ${tab.title}`);
-		console.log(`心跳记录: ${heartbeatCount}`);
+		const registry = await countHeartbeats();
+		console.log(`心跳记录: ${heartbeatCount} 条有效 / 目录共 ${registry} 个文件${registry > heartbeatCount ? `(可清理 ${registry - heartbeatCount} 条:ais gc --yes)` : ""}`);
 		console.log(`工具配色(256 色): ${describeToolColors()}(可用 NO_COLOR / AIS_COLOR=0 关闭)`);
 		const extensionList = configuredExtensions();
 		console.log(`拓展: ${extensionList.length ? extensionList.join(", ") : "(无 —— 核心单独运行)"}`);
@@ -83,6 +92,23 @@ async function main(): Promise<void> {
 	if (args.liveOnly) list = list.filter((view) => view.state === "running");
 	if (args.query && (args.command === "focus" || args.command === "resume")) {
 		list = rankByQuery(list, args.query, (view) => `${title(view)} ${view.cwd} ${view.tool} ${view.id}`, 500);
+	}
+
+	if (args.command === "gc") {
+		const result = await sweepHeartbeats({ dryRun: !args.yes });
+		const staleList = result.stale.length > 9 ? `${result.stale.slice(0, 9).join(", ")} …` : result.stale.join(", ");
+		if (result.stale.length === 0) {
+			console.log(`心跳注册表干净:共 ${result.total} 个文件,没有可清理的`);
+			return;
+		}
+		if (!args.yes) {
+			console.log(`可清理 ${result.stale.length} / ${result.total} 个心跳文件(失效记录:进程已死且超 24 小时,或超 7 天):`);
+			console.log(`  ${staleList}`);
+			console.log("确认后请加 --yes 重新执行");
+			return;
+		}
+		console.log(`OK 已清理 ${result.removed} / ${result.total} 个心跳文件:${staleList}`);
+		return;
 	}
 
 	if (args.command === "delete") {
@@ -130,7 +156,7 @@ async function main(): Promise<void> {
 			return;
 		}
 		const summary = summarize(views);
-		console.log(`AI 会话 ${summary.total} 个(运行中 ${summary.running}) — 显示 ${Math.min(list.length, args.limit)} 条`);
+		console.log(`AI 会话 ${summary.total} 个(运行中 ${summary.running}) — 显示 ${Math.min(list.length, args.limit)} 条${args.fast ? "(快速模式:实况可能滞后 ≤60 秒)" : ""}`);
 		for (const view of list.slice(0, args.limit)) console.log(formatRow(view));
 		return;
 	}

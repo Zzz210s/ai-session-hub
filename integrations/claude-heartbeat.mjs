@@ -15,11 +15,48 @@
  * 设计:永不抛错、永不阻塞(任何异常都静默退出 0),避免影响 Claude Code 本体。
  */
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 const LIVE_DIR = join(homedir(), ".ai-sessions", "live");
+
+/**
+ * 注册表 GC(与 pi 侧同一策略):崩溃遗留的心跳会越积越多。
+ * 损坏/时间戳不可解析 → 删;僵僵 pid 且超 24 小时 → 删;超 7 天 → 删。失败静默。
+ */
+const GC_DEAD_AGE_MS = 24 * 3600_000;
+const GC_MAX_AGE_MS = 7 * 24 * 3600_000;
+
+function pidAlive(pid) {
+	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return error?.code === "EPERM";
+	}
+}
+
+function sweepHeartbeatRegistry() {
+	try {
+		for (const name of readdirSync(LIVE_DIR)) {
+			if (!name.endsWith(".json")) continue;
+			const file = join(LIVE_DIR, name);
+			try {
+				const info = JSON.parse(readFileSync(file, "utf8"));
+				const age = Date.now() - Date.parse(String(info?.updatedAt ?? ""));
+				if (!Number.isFinite(age) || age > GC_MAX_AGE_MS || (age > GC_DEAD_AGE_MS && !pidAlive(info?.pid))) {
+					rmSync(file, { force: true });
+				}
+			} catch {
+				rmSync(file, { force: true });
+			}
+		}
+	} catch {
+		/* 目录不存在或没权限:不影响 Claude Code */
+	}
+}
 
 const STATE_BY_EVENT = {
 	SessionStart: { status: "idle", attention: false },
@@ -63,6 +100,7 @@ function main() {
 	}
 
 	const state = STATE_BY_EVENT[payload.hook_event_name] ?? { status: "running", attention: false };
+	if (payload.hook_event_name === "SessionStart") sweepHeartbeatRegistry();
 	try {
 		mkdirSync(LIVE_DIR, { recursive: true });
 		writeFileSync(

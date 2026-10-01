@@ -107,6 +107,8 @@ ais list --live          # 只看运行中的会话
 ais list --json          # 机器可读(含 sessionFile / tab / resumeCommand)
 ais doctor               # 探测诊断:各工具会话数、活体进程、终端标签、心跳
 ais focus  <查询>        # 聚焦运行中的会话
+ais list --fast          # 快速模式:实况允许滞后 ≤60 秒,恒定 ~0.2 秒(严格路径可能等 1-16 秒探测)
+ais gc [--yes]           # 清理失效心跳(默认只预览;进程已死超 24 小时或超 7 天的记录)
 ais --no-update          # 跳过启动前自更新(等价 AIS_NO_UPDATE=1)
 ```
 
@@ -264,6 +266,7 @@ MIT
 | `ais list`(71 个会话 + 活体探测) | ~4.6 s | **~0.25 s** |
 | TUI 首帧(TUI 路径:先用上次快照) | **~0.4 s** | **~0 s** |
 | `ais list` 严格路径(等真探测) | 1.2-16 s | 同左(波动来自 PowerShell) |
+| `ais list --fast`(实况 ≤60 秒旧) | ~0.2 s | ~0.2 s |
 
 慢在哪、改了什么:
 
@@ -283,6 +286,25 @@ TUI 的加载(首帧与每 3 秒的刷新)因此都带 `staleLive` + `staleSessi
 - 缓存太旧或不存在 → 才同步取
 
 CLI(`ais list` / `ais doctor`)不带这两个开关:**每次都真探真扫**,不会拿旧数据糊弄你。
+
+### 心跳注册表 GC
+
+崩溃/被杀的会话不会自己删心跳文件(正常退出会删),几周就能积到几百上千个,而每次读注册表都要 stat+read 全部文件。清理规则:记录损坏或时间戳不可解析、进程已死且超 24 小时、超 7 天(不论 pid —— 本机实测存在 **pid 复用**,不能只看 pid)。
+
+- **自动**:pi / claude 的心跳集成在会话启动时各扫一遍(`integrations/pi-heartbeat.ts`、`integrations/claude-heartbeat.mjs`)
+- **手动**:`ais gc`(预览) / `ais gc --yes`(清理);`ais doctor` 会显示"N 条有效 / 目录共 M 个文件"
+- 本机实测:459 → 34 个文件后,读注册表 **143 ms → 22 ms**
+
+### PowerShell 引擎
+
+`windows.ps1` / `focus.ps1` / `recycle.ps1` 在 PowerShell 7(pwsh)下都能跑(已逐个验证),但**默认仍用系统自带的 powershell.exe** —— 5 轮交替实测 `windows.ps1`:
+
+| 引擎 | 最小 | 平均 |
+|---|---|---|
+| `powershell.exe` | **1254 ms** | **1363 ms** |
+| `pwsh` 7 | 1431 ms | 1714 ms |
+
+想切:`AIS_PWSH=C:/path/to/pwsh.exe ais`(pwsh 坏掉时自动回退到 powershell.exe,不会让探测一直失败)。
 
 ### 启动前自更新的进度
 
@@ -305,6 +327,7 @@ ais list --no-cache        # 本次绕过缓存
 AIS_CACHE=0 ais            # 完全关闭缓存
 AIS_LIVE_TTL_MS=3000       # 活体探测有效期(0 = 每次都探)
 AIS_LIVE_STALE_MS=60000    # 允许先用多久以内的旧探测快照渲染(仅 TUI)
+AIS_PWSH=C:/path/pwsh.exe  # 换 PowerShell 引擎(默认 powershell.exe;0=强制自带)
 AIS_SCAN_TTL_MS=0          # 关闭单文件扫描缓存
 rm -rf ~/.ai-session-hub/cache   # 清空
 ```

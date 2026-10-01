@@ -4,6 +4,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { cacheDir, readCache, ttlFromEnv, writeCache } from "../cache.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +23,36 @@ export interface LiveSnapshot {
 	stale?: boolean;
 }
 
-/** 依据命令行判定属于哪个 CLI;不属于任何已知 CLI 时返回 null */
+/**
+ * 选 PowerShell 引擎:优先 PowerShell 7(pwsh)。
+ *
+ * 本机实测(5 轮交替采样,scripts/windows.ps1):
+ *   powershell.exe  最小 1254ms / 平均 1363ms
+ *   pwsh 7          最小 1431ms / 平均 1714ms   ← **更慢**
+ * 所以默认仍是系统自带的 powershell.exe;想用 pwsh 自己指定(AIS_PWSH=<路径>)。
+ * 三份脚本(windows.ps1 / focus.ps1 / recycle.ps1)在 pwsh 下都已验证能跑,所以随时可切。
+ */
+export function resolvePowerShellEngine(env: NodeJS.ProcessEnv = process.env, fileExists: (p: string) => boolean = existsSync): string {
+	const override = (env.AIS_PWSH ?? "").trim();
+	if (!override || /^(auto|default|0|false|1|true)$/i.test(override)) return "powershell.exe";
+	return override;
+}
+
+/** 探测 pwsh 的位置(仅用于提示/诊断;默认不启用) */
+export function findPwsh(env: NodeJS.ProcessEnv = process.env, fileExists: (p: string) => boolean = existsSync): string | undefined {
+	const candidates = [
+		`${env.ProgramFiles ?? "C:/Program Files"}/PowerShell/7/pwsh.exe`,
+		`${env.LOCALAPPDATA ?? ""}/Microsoft/WindowsApps/pwsh.exe`,
+		`${env.USERPROFILE ?? ""}/scoop/shims/pwsh.exe`,
+	];
+	for (const candidate of candidates) if (fileExists(candidate)) return candidate;
+	for (const dir of (env.PATH ?? "").split(";")) {
+		if (!dir) continue;
+		const candidate = `${dir.replace(/[\\/]$/, "")}/pwsh.exe`;
+		if (fileExists(candidate)) return candidate;
+	}
+	return undefined;
+}
 export function classifyProcess(cmd: string): { tool: Tool; internal: boolean } | null {
 	const lower = cmd.toLowerCase();
 	if (lower.includes("pi-coding-agent")) {
@@ -39,10 +69,37 @@ export function classifyProcess(cmd: string): { tool: Tool; internal: boolean } 
 	return null;
 }
 
-function runPowerShell(scriptPath: string, args: string[]): Promise<string> {
+let engine: string | null = null;
+
+function engineOf(): string {
+	if (!engine) engine = resolvePowerShellEngine();
+	return engine;
+}
+
+/** 测试/切换引擎用:下次调用重新解析 */
+export function resetPowerShellEngine(): void {
+	engine = null;
+}
+
+/**
+ * 跑一次脚本;若用的是 pwsh 而它失败了(坏安装/权限),永久回退到 powershell.exe —— 不让每次探测都白试一遍。
+ * 注意 windows.ps1 的调用方自己吞掉错误,所以这里的重试是有意义的。
+ */
+async function runPowerShell(scriptPath: string, args: string[]): Promise<string> {
+	const exe = engineOf();
+	try {
+		return await runWith(exe, scriptPath, args);
+	} catch (error) {
+		if (exe === "powershell.exe") throw error;
+		engine = "powershell.exe";
+		return runWith("powershell.exe", scriptPath, args);
+	}
+}
+
+function runWith(exe: string, scriptPath: string, args: string[]): Promise<string> {
 	return new Promise((resolve, reject) => {
 		execFile(
-			"powershell.exe",
+			exe,
 			["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath, ...args],
 			{ maxBuffer: 16 * 1024 * 1024, windowsHide: true },
 			(error, stdout, stderr) => {

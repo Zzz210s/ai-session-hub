@@ -115,6 +115,8 @@ ais list --live          # only running sessions
 ais list --json          # machine-readable (sessionFile / tab / resumeCommand)
 ais doctor               # discovery diagnostics: per-tool counts, live processes, terminal tabs, heartbeats
 ais focus  <query>       # focus a running session's window
+ais list --fast          # fast mode: live data may lag <=60s, steady ~0.2s (the strict path can wait 1-16s for a probe)
+ais gc [--yes]           # drop stale heartbeats (preview by default; dead pid over 24h, or anything over 7 days)
 ais --no-update          # skip the startup self-update (same as AIS_NO_UPDATE=1)
 ```
 
@@ -279,6 +281,7 @@ Everything is cached on disk under `~/.ai-session-hub/cache/`, keyed by file fin
 | `ais list` (71 sessions, live probe) | ~4.6 s | **~0.25 s** |
 | TUI first frame (stale-while-revalidate) | **~0.4 s** | **~0 s** |
 | `ais list` strict path (waits for a real probe) | 1.2-16 s | same (PowerShell variance) |
+| `ais list --fast` (live snapshot <=60 s old) | ~0.2 s | ~0.2 s |
 
 What made it slow, and what was fixed:
 
@@ -298,6 +301,25 @@ Both TUI loads (first frame and the 3-second refresh) therefore pass `staleLive`
 - cache is too old or missing → fetch synchronously
 
 The CLI (`ais list` / `ais doctor`) passes neither flag: it always probes and scans for real.
+
+### Heartbeat registry GC
+
+A crashed or killed session does not remove its heartbeat file (a clean exit does), so the registry can accumulate hundreds or thousands of entries in a few weeks — and every read stats+reads all of them. Cleanup rules: broken or unparseable records, a dead pid older than 24h, or anything older than 7 days (regardless of pid — **pid reuse** is real on this machine, so age alone cannot be trusted).
+
+- **Automatic**: the pi / claude heartbeat integrations sweep on session start (`integrations/pi-heartbeat.ts`, `integrations/claude-heartbeat.mjs`)
+- **Manual**: `ais gc` (preview) / `ais gc --yes`; `ais doctor` reports "N valid / M files in the directory"
+- Measured here: 459 -> 34 files took the registry read from **143 ms to 22 ms**
+
+### PowerShell engine
+
+`windows.ps1` / `focus.ps1` / `recycle.ps1` all run under PowerShell 7 (pwsh) — each was verified — but the default stays with the bundled `powershell.exe`, because five interleaved rounds of `windows.ps1` measured:
+
+| Engine | Min | Avg |
+|---|---|---|
+| `powershell.exe` | **1254 ms** | **1363 ms** |
+| `pwsh` 7 | 1431 ms | 1714 ms |
+
+To switch: `AIS_PWSH=C:/path/to/pwsh.exe ais` (a broken pwsh falls back to powershell.exe automatically instead of failing every probe).
 
 ### Startup self-update progress
 

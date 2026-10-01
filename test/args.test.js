@@ -44,3 +44,16 @@ test("--limit / --tool= / --live / --no-live / --no-cache", () => {
 	assert.equal(parseArgs(["--no-live"]).noLive, true);
 	assert.equal(parseArgs(["--no-cache"]).noCache, true);
 });
+
+test("--fast:识别为快速模式开关", () => {
+	const args = parseArgs(["list", "--fast"]);
+	assert.equal(args.fast, true);
+	assert.equal(args.command, "list");
+	assert.equal(parseArgs([]).fast, false);
+});
+
+test("gc 与 delete 一样是命令,不是查询词", () => {
+	const args = parseArgs(["gc", "--yes"]);
+	assert.equal(args.command, "gc");
+	assert.equal(args.yes, true);
+});

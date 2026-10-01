@@ -27,6 +27,8 @@ export interface LoadOptions {
 	staleLive?: boolean;
 	/** 允许先用上次的视图列表渲染(后台重扫)—— 消除会话扫描造成的停顿 */
 	staleSessions?: boolean;
+	/** 过期探测快照可接受的最大年龄(快速模式用,例如 60 秒) */
+	liveStaleMs?: number;
 	/** 视图缓存文件路径(测试用) */
 	viewsCachePath?: string;
 	/** 重新加载的实现(测试用;默认真实扫描 + 活体探测) */
@@ -69,7 +71,7 @@ function refreshViews(options: LoadOptions, path: string): void {
 async function loadUncached(options: LoadOptions): Promise<LoadResult> {
 	const livePromise = options.noLive
 		? Promise.resolve<LiveSnapshot>(EMPTY_LIVE)
-		: probeLive({ noCache: options.noCache, ttlMs: options.liveTtlMs, allowStale: options.staleLive });
+		: probeLive({ noCache: options.noCache, ttlMs: options.liveTtlMs, allowStale: options.staleLive, staleMs: options.liveStaleMs });
 	const [sessions, live, heartbeats] = await Promise.all([scanAllSessions({ tools: options.tools }), livePromise, readHeartbeats()]);
 	const views = correlate({
 		sessions,
