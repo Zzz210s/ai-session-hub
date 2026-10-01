@@ -5,17 +5,16 @@
 
 import type { SessionView } from "./model.ts";
 import { clearCache } from "./cache.ts";
-import { copyResumeCommand, focusSession, resumeCommand } from "./actions.ts";
-import { type ActionKind } from "./tui-keys.ts";
+import { resumeCommand } from "./actions.ts";
 import { createInputPump } from "./tui-input.ts";
 import { createContext } from "./tui-context.ts";
 import { createTuiScreen } from "./tui-screen.ts";
-import { runAttach } from "./tui-attach.ts";
 import { createDeleteFlow } from "./tui-delete.ts";
+import { createTuiActions } from "./tui-actions.ts";
 import { supportsColor } from "./theme.ts";
 import { loadExtensions, type ExtensionContext, type HubExtension } from "./extensions.ts";
 import { createExtensionContext } from "./tui-extension-ctx.ts";
-import { filterRows, renderScreen, stripAnsi, totalsOf, type FilterKind, type TuiState } from "./tui-view.ts";
+import { buildTuiState, renderScreen, stripAnsi, type FilterKind, type TuiState } from "./tui-view.ts";
 import { fullTitle } from "./format.ts";
 
 const REFRESH_MS = 3000;
@@ -40,34 +39,26 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	let message = "";
 	let drawTimer: ReturnType<typeof setTimeout> | null = null;
 	let done: (why: string) => void = () => {};
-
 	/** 已加载的拓展(加载失败只提示,不影响核心) */
 	const loaded = await loadExtensions(options.extensions);
 	const extensions: HubExtension[] = loaded.filter((entry) => !entry.error).map((entry) => entry.extension);
 	const failures = loaded.filter((entry) => entry.error);
 
-	const computeState = (): TuiState => {
-		const rows = filterRows(allRows, ui.filter, ui.query);
-		const body = extensions.map((extension) => extension.bodyView?.(extCtx)).find((value) => value && value.length);
-		const hints = extensions.flatMap((extension) => extension.hints ?? []);
-		return {
-			rows,
-			totals: totalsOf(allRows),
+	const computeState = (): TuiState =>
+		buildTuiState({
+			allRows,
 			filter: ui.filter,
 			query: ui.query,
 			searchMode: ui.searchMode,
-			cursor: Math.min(ui.cursor, Math.max(0, rows.length - 1)),
+			cursor: ui.cursor,
 			width: stdout.columns ?? 120,
 			height: stdout.rows ?? 30,
 			message,
 			confirm: deleteFlow.pending(),
-			refreshedAt: new Date(),
-			now: new Date(),
 			color: supportsColor(process.env, Boolean(stdout.isTTY)),
-			customBody: body,
-			customHints: hints.length ? hints : undefined,
-		};
-	};
+			customBody: extensions.map((extension) => extension.bodyView?.(extCtx)).find((value) => value && value.length),
+			customHints: extensions.flatMap((extension) => extension.hints ?? []),
+		});
 
 	const draw = (force = false): void => {
 		const state = computeState();
@@ -101,40 +92,24 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		}
 	};
 
-	const selected = (): SessionView | undefined => {
-		const state = computeState();
-		return state.rows[state.cursor];
-	};
+	const actions = createTuiActions({
+		rows: () => computeState().rows,
+		cursorIndex: () => ui.cursor,
+		setCursorIndex: (index) => {
+			ui.cursor = index;
+		},
+		screen,
+		reload,
+		notify: (text) => {
+			message = text;
+		},
+		redraw: () => draw(true),
+		extensions,
+		extensionContext: () => extCtx,
+	});
 
-	const attach = (view: SessionView): Promise<void> => runAttach(screen, view, { reload, notify: extCtx.notify, redraw: extCtx.redraw });
-
-	const act = async (kind: ActionKind): Promise<void> => {
-		const view = selected();
-		if (!view) return;
-		if (kind === "attach") return attach(view);
-		if (kind === "copy") {
-			message = (await copyResumeCommand(view)).detail;
-		} else if (kind === "focus") {
-			message = (await focusSession(view)).detail;
-		} else if (view.state === "running" && view.live?.tab) {
-			message = (await focusSession(view)).detail;
-		} else {
-			// 历史会话:交给拓展(如分屏)打开;没有拓展时提示可用 a 接管
-			const opener = extensions.find((extension) => extension.openSelected);
-			if (opener?.openSelected) await opener.openSelected(extCtx);
-			else message = "该会话未运行:按 a 接管终端继续";
-		}
-		draw(true);
-	};
-
-	const move = (delta: number): void => {
-		ui.cursor = Math.max(0, Math.min(computeState().rows.length - 1, computeState().cursor + delta));
-		draw(true);
-	};
-
-	/** 传给拓展的上下文(会话信息含恢复命令 + 尺寸 + 提示/重绘) */
 	const extCtx: ExtensionContext = createExtensionContext({
-		selected,
+		selected: actions.selected,
 		size: () => ({ width: stdout.columns ?? 120, height: stdout.rows ?? 30 }),
 		notify: (text) => (message = text),
 		redraw: () => draw(true),
@@ -143,7 +118,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
 	const deleteFlow = createDeleteFlow({
 		rows: () => allRows,
-		selected,
+		selected: actions.selected,
 		notify: (text) => (message = text),
 		redraw: () => draw(true),
 		reload,
@@ -152,8 +127,8 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	const context = createContext({
 		ui,
 		rowCount: () => computeState().rows.length,
-		move,
-		act,
+		move: actions.move,
+		act: actions.act,
 		pendingConfirm: () => deleteFlow.pending(),
 		requestDelete: () => deleteFlow.request(),
 		answerConfirm: (accepted) => deleteFlow.answer(accepted),

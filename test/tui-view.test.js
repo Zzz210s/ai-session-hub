@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { displayWidth, fit, renderScreen, stripAnsi, viewport } from "../src/tui-view.ts";
+import { buildTuiState, displayWidth, fit, renderScreen, stripAnsi, viewport } from "../src/tui-view.ts";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
 
@@ -119,4 +119,24 @@ test("renderScreen:装了拓展时展示拓展自己的键位提示", () => {
 	const withHints = { ...state(), customHints: ["Enter 分屏打开"] };
 	const text = stripAnsi(renderScreen(withHints).join("\n"));
 	assert.ok(text.includes("Enter 分屏打开"), "应展示拓展键位");
+});
+
+test("buildTuiState:光标夹紧、总量按全部行统计、空提示归一为 undefined", () => {
+	const rows = [view({ id: "a", state: "running" }), view({ id: "b" })];
+	const built = buildTuiState({ allRows: rows, filter: "all", query: "", searchMode: false, cursor: 99, width: 80, height: 10, customHints: [], now: NOW });
+	assert.equal(built.rows.length, 2);
+	assert.equal(built.cursor, 1, "光标不得超过末尾");
+	assert.equal(built.totals.all, 2);
+	assert.equal(built.totals.running, 1);
+	assert.equal(built.customHints, undefined, "空数组不应写成空提示");
+	assert.equal(built.now, NOW);
+});
+
+test("buildTuiState:筛选与搜索同时生效,光标在筛选后的行内夹紧", () => {
+	const rows = [view({ id: "a", state: "running", name: "alpha" }), view({ id: "b", name: "beta" }), view({ id: "c", name: "alpha two" })];
+	const built = buildTuiState({ allRows: rows, filter: "all", query: "alpha", searchMode: true, cursor: 5, width: 80, height: 10, now: NOW });
+	assert.equal(built.rows.length, 2, "只有匹配的行");
+	assert.equal(built.cursor, 1);
+	const stored = buildTuiState({ allRows: rows, filter: "stored", query: "", searchMode: false, cursor: 0, width: 80, height: 10, now: NOW });
+	assert.equal(stored.rows.length, 2, "历史筛选排除 running");
 });

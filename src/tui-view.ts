@@ -66,6 +66,42 @@ export function totalsOf(rows: SessionView[]): TuiState["totals"] {
 	};
 }
 
+/** 组装一帧要用的状态:把“当前筛选与光标”夹到合法范围,并算出总量/视口参数 */
+export function buildTuiState(input: {
+	allRows: SessionView[];
+	filter: FilterKind;
+	query: string;
+	searchMode: boolean;
+	cursor: number;
+	width: number;
+	height: number;
+	message?: string;
+	confirm?: string;
+	color?: boolean;
+	customBody?: CustomBody;
+	customHints?: string[];
+	now?: Date;
+}): TuiState {
+	const rows = filterRows(input.allRows, input.filter, input.query);
+	return {
+		rows,
+		totals: totalsOf(input.allRows),
+		filter: input.filter,
+		query: input.query,
+		searchMode: input.searchMode,
+		cursor: Math.min(input.cursor, Math.max(0, rows.length - 1)),
+		width: input.width,
+		height: input.height,
+		message: input.message,
+		confirm: input.confirm,
+		refreshedAt: input.now ?? new Date(),
+		now: input.now ?? new Date(),
+		color: input.color,
+		customBody: input.customBody?.length ? input.customBody : undefined,
+		customHints: input.customHints?.length ? input.customHints : undefined,
+	};
+}
+
 /** 视口计算:保证 cursor 可见 */
 export function viewport(state: TuiState): { start: number; end: number; bodyHeight: number } {
 	const bodyHeight = Math.max(3, state.height - 3);
