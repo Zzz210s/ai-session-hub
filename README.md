@@ -301,7 +301,8 @@ The CLI (`ais list` / `ais doctor`) passes neither flag: it always probes and sc
 
 ### Startup self-update progress
 
-Every step prints a start line and a result line (with elapsed time; failures carry the reason), so updates are no longer a silent wait:
+Every step prints a start line and a result line (with elapsed time; failures carry the reason), so updates are no longer a silent wait.
+**Steps of different tools run in parallel** (two steps of the same tool stay ordered; npm global installs share one group): 4 steps went from 11.7 s serial to ~11 s here, with the pi group as the long pole — the win is bigger when claude / npm are the slow ones:
 
 ```
 [ais] 执行 4 项更新…

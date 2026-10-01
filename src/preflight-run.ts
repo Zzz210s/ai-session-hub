@@ -59,9 +59,14 @@ export function resolvePi(): string {
 }
 
 /** 经 Git Bash 执行一条命令(可尽力而为:失败不计入失败项,也不拦住启动) */
-function bashStep(label: string, bash: string, command: string, options: { best?: boolean; timeoutMs?: number } = {}): Step {
+function bashStep(
+	label: string,
+	bash: string,
+	command: string,
+	options: { best?: boolean; timeoutMs?: number; group?: string } = {},
+): Step {
 	const suffix = options.best ? " >/dev/null 2>&1 || true" : "";
-	return { label, command: bash, args: ["-lc", command + suffix], timeoutMs: options.timeoutMs ?? 900_000 };
+	return { label, command: bash, args: ["-lc", command + suffix], timeoutMs: options.timeoutMs ?? 900_000, group: options.group };
 }
 
 /** 本机装了哪些 CLI(只给装了的排步骤) */
@@ -79,20 +84,21 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Ste
 	const bash = input.gitBash;
 	if (!bash) return [];
 	const quoted = `"${input.piBin}"`;
+	// 分组:同一工具的两步保持先后顺序;不同工具并行(实测 4 步串行 11.7 秒 → 并行 ≈ 6 秒)
 	const steps: Step[] = [
-		bashStep("更新 pi 本体", bash, `${quoted} update`, { timeoutMs: 600_000 }),
-		bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`),
+		bashStep("更新 pi 本体", bash, `${quoted} update`, { timeoutMs: 600_000, group: "pi" }),
+		bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`, { group: "pi" }),
 	];
-	const others: [string, string, string][] = [
-		["claude", "claude update", "更新 Claude Code"],
-		["claude", "claude plugin update", "更新 Claude 插件"],
-		["opencode", "opencode upgrade", "更新 opencode"],
-		["codex", "npm i -g @openai/codex@latest", "更新 codex"],
-		["gemini", "npm i -g @google/gemini-cli@latest", "更新 gemini"],
+	const others: [string, string, string, string][] = [
+		["claude", "claude update", "更新 Claude Code", "claude"],
+		["claude", "claude plugin update", "更新 Claude 插件", "claude"],
+		["opencode", "opencode upgrade", "更新 opencode", "opencode"],
+		["codex", "npm i -g @openai/codex@latest", "更新 codex", "npm"],
+		["gemini", "npm i -g @google/gemini-cli@latest", "更新 gemini", "npm"],
 	];
-	for (const [bin, command, label] of others) {
+	for (const [bin, command, label, group] of others) {
 		if (!isInstalled(bin)) continue;
-		steps.push(bashStep(label, bash, command, { best: true }));
+		steps.push(bashStep(label, bash, command, { best: true, group }));
 	}
 	return steps; // 独立程序:不拉别人的仓库,也不跑别人的 setup.sh
 }

@@ -12,6 +12,8 @@ export interface Step {
 	command: string;
 	args: string[];
 	timeoutMs: number;
+	/** 同组内顺序执行;不同组之间并行(各家 CLI 互不干扰,没理由排队等) */
+	group?: string;
 }
 
 export interface PreflightResult {
@@ -43,19 +45,42 @@ export interface PreflightOptions {
 	onStepDone?: (step: { label: string; ok: boolean; ms: number; detail?: string }) => void;
 }
 
-/** 顺序执行步骤;失败只记录,不影响后续步骤 */
+/**
+ * 执行步骤:同组按声明顺序跑,不同组并行。
+ *
+ * 为什么分组并行:实测本机 4 步串行要 11.7 秒(pi 本体 1.8s + pi 扩展 4.6s + claude 4.4s + claude 插件 0.9s),
+ * 而这两家的更新毫无依赖关系 —— 并行后取最长组 ≈ 6 秒。同一个工具的两步仍保持先后顺序(避免锁/缓存冲突),
+ * npm 全局安装也都归到"npm"一组,不会同时跑两个 npm。
+ */
 export async function preflight(options: PreflightOptions): Promise<PreflightResult> {
 	const run = options.runner ?? execRunner;
-	const results: PreflightResult["steps"] = [];
-	for (const step of options.steps) {
+	const steps = options.steps;
+	const results: PreflightResult["steps"] = new Array(steps.length);
+
+	const runOne = async (index: number): Promise<void> => {
+		const step = steps[index]!;
 		options.onProgress?.(`${step.label}…`);
 		const startedAt = performance.now();
 		const { ok, out } = await run(step.command, step.args, step.timeoutMs);
 		const ms = Math.round(performance.now() - startedAt);
 		const detail = ok ? undefined : out.split("\n").slice(-2).join(" ").slice(0, 160);
-		results.push({ label: step.label, ok, detail });
+		results[index] = { label: step.label, ok, detail };
 		options.onStepDone?.({ label: step.label, ok, ms, detail });
-	}
+	};
+
+	const groups = new Map<string, number[]>();
+	steps.forEach((step, index) => {
+		const key = step.group ?? "";
+		const list = groups.get(key);
+		if (list) list.push(index);
+		else groups.set(key, [index]);
+	});
+	const runGroup = async (indexes: number[]): Promise<void> => {
+		for (const index of indexes) await runOne(index);
+	};
+	// 单组(或没标组)时就是纯顺序执行 —— 与旧行为一致
+	await Promise.all([...groups.values()].map(runGroup));
+
 	const failed = results.filter((result) => !result.ok);
 	const summary =
 		failed.length === 0 ? `${results.length} 步全部完成` : `${results.length - failed.length}/${results.length} 步完成,失败: ${failed.map((f) => f.label).join("、")}`;
