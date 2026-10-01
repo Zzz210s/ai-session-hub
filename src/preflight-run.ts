@@ -5,12 +5,12 @@
  * 因此这里**不再做版本/变更检测**(不查 npm、不比对版本、不解析 Already up to date),
  * 每次启动按固定顺序把所有更新命令跑一遍,再用更新后的环境启动会话。
  *
- * 顺序:
- *   1) git pull 各配置仓库(config-ai / config-cli / 三个独立扩展 / brief-hub,存在才做)
- *   2) pi update
- *   3) pi update --extensions
- *   4) 其它 AI CLI + 插件:claude(本体 + 插件)、opencode、codex、gemini(尽力而为)
- *   5) config-ai/setup.sh 重新部署(把最新配置投射到各 CLI)
+ * 顺序(只更新 AI CLI 与它们的插件,不管其它项目):
+ *   1) pi update
+ *   2) pi update --extensions
+ *   3) 其它 AI CLI + 插件:claude(本体 + 插件)、opencode、codex、gemini(尽力而为)
+ *
+ * 独立性:ai-session-hub 是独立程序 —— 不 git pull 别的仓库,也不运行别人的 setup.sh。
  *
  * 环境坑:Windows 上 .cmd/.bat 不能被 execFile 直接执行,裸 bash 又可能落到 WSL ——
  * 所以**所有命令统一经 Git Bash 绝对路径执行**,并把 .cmd 路径用双引号包住。
@@ -34,9 +34,6 @@ export interface StartOptions {
 }
 
 const VERSION = /(\d+\.\d+\.\d+)/;
-
-/** 配置仓库(存在才处理) */
-export const CONFIG_REPOS = ["config-ai", "config-cli", "pi-tab-status", "pi-codegraph", "ai-session-hub", "brief-hub"] as const;
 
 /** Git Bash 绝对路径(避免落到 WSL 的 bash) */
 export function resolveGitBash(): string | undefined {
@@ -90,17 +87,7 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string; home?:
 	const home = input.home ?? process.env.USERPROFILE ?? "";
 	const bash = input.gitBash;
 	const steps: Step[] = [];
-	for (const repo of CONFIG_REPOS) {
-		const dir = `${home}/${repo}`;
-		try {
-			if (!existsSync(dir)) continue;
-		} catch {
-			continue;
-		}
-		// git 是 .exe,可直接执行;但仍走同一执行器,失败会如实显示
-		steps.push({ label: `拉新 ${repo}`, command: "git", args: ["-C", dir, "pull", "--ff-only", "--quiet"], timeoutMs: 120_000 });
-	}
-	if (!bash) return steps; // 没有 Git Bash 时只做 git pull(其余命令无法安全执行)
+	if (!bash) return steps; // 没有 Git Bash 时无法安全执行这些命令(不再做 git pull:那是别的项目的事)
 	const quoted = `"${input.piBin}"`;
 	steps.push(bashStep("更新 pi 本体", bash, `${quoted} update`, { timeoutMs: 600_000 }));
 	steps.push(bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`));
@@ -117,15 +104,7 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string; home?:
 		if (!installed) continue;
 		steps.push(bashStep(label, bash, command, { best: true }));
 	}
-	if (!input.skipDeploy) {
-		const setup = `${home}/config-ai/setup.sh`;
-		try {
-			if (existsSync(setup)) steps.push(bashStep("重新部署配置", bash, `"${setup}"`, { timeoutMs: 900_000 }));
-		} catch {
-			/* 忽略 */
-		}
-	}
-	return steps;
+	return steps; // 独立程序:不拉别人的仓库,也不跑别人的 setup.sh
 }
 
 /** 后台命令:跑 preflight-bg.ts */
