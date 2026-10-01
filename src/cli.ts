@@ -181,7 +181,7 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const pre = await cliPreflight({ update: args.bool.has("update"), noUpdate: args.bool.has("no-update") });
+	const pre = await cliPreflight({ update: parsed?.bool?.has?.("update") ?? false, noUpdate: parsed?.bool?.has?.("no-update") ?? false });
 	if (pre) console.log(pre);
 	await runTui({
 		load: async (options) => (await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs })).views,
