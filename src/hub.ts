@@ -29,7 +29,12 @@ export interface LoadOptions {
 	staleSessions?: boolean;
 	/** 视图缓存文件路径(测试用) */
 	viewsCachePath?: string;
+	/** 重新加载的实现(测试用;默认真实扫描 + 活体探测) */
+	loader?: (options: LoadOptions) => Promise<LoadResult>;
 }
+
+/** 默认加载实现(供外部注入替换,如测试) */
+export type ViewsLoader = (options: LoadOptions) => Promise<LoadResult>;
 
 export interface LoadResult {
 	views: SessionView[];
@@ -52,7 +57,8 @@ let refreshing: Promise<void> | null = null;
 /** 后台重扫并回写缓存(同一时刻只跑一个,失败静默) */
 function refreshViews(options: LoadOptions, path: string): void {
 	if (refreshing) return;
-	refreshing = loadUncached(options)
+	const load = options.loader ?? loadUncached;
+	refreshing = load(options)
 		.then((result) => writeCache({ path, ttlMs: VIEWS_CACHE_TTL_MS }, result.views))
 		.catch(() => undefined)
 		.finally(() => {
@@ -87,7 +93,7 @@ export async function loadViews(options: LoadOptions = {}): Promise<LoadResult> 
 			return { views: plan.use, live: plan.refresh ? { ...EMPTY_LIVE, stale: true } : EMPTY_LIVE, heartbeatCount: 0 };
 		}
 	}
-	const result = await loadUncached(options);
+	const result = await (options.loader ?? loadUncached)(options);
 	if (!options.noCache) await writeCache({ path, ttlMs: VIEWS_CACHE_TTL_MS }, result.views);
 	return result;
 }
