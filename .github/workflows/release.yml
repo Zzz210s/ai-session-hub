@@ -59,9 +59,12 @@ jobs:
         if: matrix.target == 'windows'
         shell: pwsh
         run: |
-          $dir = Join-Path $env:RUNNER_TEMP "ais-pkg"
-          Expand-Archive -Path $env:ARCHIVE -DestinationPath $env:RUNNER_TEMP
+          # 注意:上一步是 bash,写进 GITHUB_ENV 的是 POSIX 路径(/d/a/...),PowerShell 用不了,
+          # 所以这里从工作区自己找压缩包。
+          $archive = Get-ChildItem dist -Filter "*.zip" | Select-Object -First 1
+          Expand-Archive -Path $archive.FullName -DestinationPath $env:RUNNER_TEMP -Force
           $root = Get-ChildItem $env:RUNNER_TEMP -Directory -Filter "ai-session-hub-*" | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "ais-pkg"
           & (Join-Path $root.FullName "install.ps1") -Dir $dir -Yes
           & (Join-Path $dir "bin\ais.cmd") version
 
