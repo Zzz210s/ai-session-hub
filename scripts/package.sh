@@ -42,8 +42,20 @@ if [ "$TARGET" = "windows" ]; then
   if command -v zip >/dev/null 2>&1; then
     (cd "$DIST" && zip -qr "$(basename "$ARCHIVE")" "$STAGE")
   else
-    echo "缺少 zip 命令" >&2
-    exit 1
+    # Git Bash / Windows runner 上不一定有 zip:用系统自带的 Compress-Archive
+    PS="$(command -v pwsh || command -v powershell || true)"
+    if [ -z "$PS" ]; then
+      echo "缺少 zip,也没有 PowerShell 的 Compress-Archive" >&2
+      exit 1
+    fi
+    if command -v cygpath >/dev/null 2>&1; then
+      STAGE_WIN="$(cygpath -w "$DIST/$STAGE")"
+      ARCHIVE_WIN="$(cygpath -w "$ARCHIVE")"
+    else
+      STAGE_WIN="$DIST/$STAGE"
+      ARCHIVE_WIN="$ARCHIVE"
+    fi
+    "$PS" -NoProfile -NonInteractive -Command "Compress-Archive -Path '$STAGE_WIN' -DestinationPath '$ARCHIVE_WIN' -Force" >/dev/null
   fi
 else
   ARCHIVE="$DIST/$STAGE-linux.tar.gz"
