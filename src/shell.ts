@@ -80,11 +80,15 @@ export function shellArgs(shellPath: string, command: string, options: { keepAli
 	};
 }
 
-/** 供展示:命令在用户 shell 里的等价写法 */
+/**
+ * 供展示:命令在用户 shell 里的等价写法。
+ * 判定完全基于路径(与运行平台无关),这样同一个路径在任何机器上展示一致、也好测:
+ * Git for Windows 的 bash 才叫 "Git Bash",其它类 Unix shell 直接报可执行文件名。
+ */
 export function shellPromptLabel(shellPath: string): string {
 	const flavor = shellFlavor(shellPath);
 	if (flavor === "powershell") return "PowerShell";
 	if (flavor === "cmd") return "cmd";
-	// Windows 上的 bash 一定来自 Git for Windows;类 Unix 上就直接报 shell 名
-	return process.platform === "win32" ? "Git Bash" : shellPath.split("/").pop() || "bash";
+	if (/git[\\/](usr[\\/])?bin[\\/]bash\.exe$/i.test(shellPath)) return "Git Bash";
+	return shellPath.split(/[\/]/).pop() || "bash";
 }

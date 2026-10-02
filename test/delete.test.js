@@ -78,8 +78,8 @@ test("deleteSession:优先送系统回收站(不硬删除)", async () => {
 	});
 	assert.equal(result.ok, true);
 	assert.equal(recycled, sessionFile, "应把会话文件交给系统回收站");
-	assert.match(result.detail, /系统回收站/);
-	assert.match(result.detail, /资源管理器还原/);
+	assert.match(result.detail, /回收站/);
+	assert.match(result.detail, process.platform === "win32" ? /资源管理器还原/ : /文件管理器还原/);
 	assert.equal(existsSync(sessionFile), false);
 	assert.equal((await readdir(trash).catch(() => [])).length, 0, "走系统回收站时不应再写内部回收目录");
 });

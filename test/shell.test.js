@@ -18,7 +18,7 @@ test("resolveShell:AIS_SHELL 显式指定优先", () => {
 	assert.equal(resolveShell({ AIS_SHELL: CMD }, () => false), CMD);
 });
 
-test("resolveShell:自动探测按 Git Bash → PowerShell 顺序", () => {
+test("resolveShell:自动探测按 Git Bash → PowerShell 顺序", { skip: process.platform !== "win32" }, () => {
 	const env = { ProgramFiles: "C:/PF", "ProgramFiles(x86)": "C:/PF86", SystemRoot: "C:/Windows" };
 	assert.match(resolveShell(env, (path) => path.includes("Git")), /Git/);
 	assert.match(resolveShell(env, (path) => path.includes("PowerShell")), /PowerShell/);
@@ -44,6 +44,13 @@ test("shellPromptLabel:展示用名称", () => {
 	assert.equal(shellPromptLabel(GIT_BASH), "Git Bash");
 	assert.equal(shellPromptLabel(PWSH), "PowerShell");
 	assert.equal(shellPromptLabel(CMD), "cmd");
+});
+
+test("shellPromptLabel:反斜杠路径也认 Git for Windows;其它 shell 报可执行文件名", () => {
+	assert.equal(shellPromptLabel("C:\\Program Files\\Git\\bin\\bash.exe"), "Git Bash");
+	assert.equal(shellPromptLabel("C:\\Program Files\\Git\\usr\\bin\\bash.exe"), "Git Bash");
+	assert.equal(shellPromptLabel("/bin/bash"), "bash");
+	assert.equal(shellPromptLabel("/usr/bin/zsh"), "zsh");
 });
 
 test("shellFlavor:类 Unix 的 sh/zsh 也按 POSIX 处理", () => {
