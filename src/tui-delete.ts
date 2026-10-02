@@ -33,7 +33,7 @@ export function createDeleteFlow(deps: DeleteFlowDeps): DeleteFlow {
 	const prompt = (sessionId: string): string => {
 		const view = deps.rows().find((row) => row.id === sessionId);
 		const label = view ? fullTitle(view) : sessionId.slice(0, 8);
-		return `删除「${label}」?会放入系统回收站(可在资源管理器还原)`;
+		return `删除「${label}」?会放入系统回收站(可在${process.platform === "win32" ? "资源管理器" : "文件管理器"}还原)`;
 	};
 
 	return {

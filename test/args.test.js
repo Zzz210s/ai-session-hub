@@ -57,3 +57,11 @@ test("gc 与 delete 一样是命令,不是查询词", () => {
 	assert.equal(args.command, "gc");
 	assert.equal(args.yes, true);
 });
+
+test("version:ais version / --version / -v 都识别为命令", () => {
+	assert.equal(parseArgs(["version"]).command, "version");
+	assert.equal(parseArgs(["--version"]).command, "version");
+	assert.equal(parseArgs(["-v"]).command, "version");
+	assert.equal(parseArgs(["-v"]).query, "", "version 不该落到 query 里");
+	assert.equal(parseArgs(["list", "--version"]).command, "list", "已有命令时不覆盖");
+});

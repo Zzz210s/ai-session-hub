@@ -1,0 +1,108 @@
+name: release
+
+# 打 tag(v0.6.0 这种)时:两个平台各跑一遍测试 → 各自打包 → 建 Release 并附上产物。
+# workflow_dispatch 只跑测试与打包(不建 Release),用来先验证流水线。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: 单元测试
+        run: node --test "test/*.test.js"
+
+  package:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+          - os: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: 安装 zip(Linux 打包用)
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: 打包
+        shell: bash
+        run: |
+          set -e
+          version="$(node -p "require('./package.json').version")"
+          archive="$(bash scripts/package.sh "$version" "${{ matrix.target }}")"
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+          ls -lh "$archive"
+
+      - name: 安装器冒烟(Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ais-pkg"
+          Expand-Archive -Path $env:ARCHIVE -DestinationPath $env:RUNNER_TEMP
+          $root = Get-ChildItem $env:RUNNER_TEMP -Directory -Filter "ai-session-hub-*" | Select-Object -First 1
+          & (Join-Path $root.FullName "install.ps1") -Dir $dir -Yes
+          & (Join-Path $dir "bin\ais.cmd") version
+
+      - name: 安装器冒烟(Linux)
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          set -e
+          tar -xzf "$ARCHIVE" -C "$RUNNER_TEMP"
+          root="$(find "$RUNNER_TEMP" -maxdepth 1 -type d -name 'ai-session-hub-*' | head -1)"
+          bash "$root/install.sh" --yes --no-modify-path --dir="$RUNNER_TEMP/ais-pkg"
+          "$RUNNER_TEMP/ais-pkg/bin/ais" version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 建 Release 并上传产物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag="${GITHUB_REF#refs/tags/}"
+          ls -lh dist
+          gh release create "$tag" dist/* \
+            --title "$tag" \
+            --notes "见 [README.zh-CN.md](https://github.com/${GITHUB_REPOSITORY}/blob/${tag}/README.zh-CN.md) 的安装章节。
+
+          Windows: 下载 \`*-windows.zip\`,解压后运行 \`powershell -ExecutionPolicy Bypass -File install.ps1\`
+          Linux:   下载 \`*-linux.tar.gz\`,解压后运行 \`./install.sh\`"

@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { planUpdateSteps, resolvePi } from "../src/preflight-run.ts";
+import { isInstalled, planUpdateSteps, resolvePi } from "../src/preflight-run.ts";
 
 const BASH = "C:/Program Files/Git/bin/bash.exe";
 
@@ -29,7 +29,7 @@ function withEnv(key, value, body) {
 	}
 }
 
-test("没有 Git Bash 时不排任何步骤", () => {
+test("没有 Git Bash 时不排任何步骤", { skip: process.platform !== "win32" }, () => {
 	assert.deepEqual(planUpdateSteps({ piBin: "C:/x/pi.CMD" }), []);
 });
 
@@ -45,7 +45,7 @@ test("pi 本体与扩展恒在,且都经 Git Bash 执行", () => {
 	}
 });
 
-test("其它 CLI 只在装了时排步骤,并带尽力而为后缀", () => {
+test("其它 CLI 只在装了时排步骤,并带尽力而为后缀", { skip: process.platform !== "win32" }, () => {
 	const dir = tempDir("ais-cli-");
 	writeFileSync(join(dir, "claude.cmd"), "@echo off\n", "utf8");
 	const steps = withEnv("APPDATA", dir, () => withEnv("PATH", dir, () => planUpdateSteps({ piBin: "pi", gitBash: BASH })));
@@ -58,7 +58,7 @@ test("其它 CLI 只在装了时排步骤,并带尽力而为后缀", () => {
 	assert.doesNotMatch(steps[0].args[1], /\|\| true$/, "pi 本体是严格步骤");
 });
 
-test("resolvePi:新版 pnpm 布局优先于旧 shim", () => {
+test("resolvePi:新版 pnpm 布局优先于旧 shim", { skip: process.platform !== "win32" }, () => {
 	const root = tempDir("ais-pi-");
 	mkdirSync(join(root, "pnpm", "bin"), { recursive: true });
 	writeFileSync(join(root, "pnpm", "pi.CMD"), "@echo off\n", "utf8"); // 旧 shim
@@ -67,8 +67,24 @@ test("resolvePi:新版 pnpm 布局优先于旧 shim", () => {
 	assert.equal(resolved.replace(/\\/g, "/"), join(root, "pnpm", "bin", "pi.CMD").replace(/\\/g, "/"));
 });
 
-test("resolvePi:都没有时回落到 PATH 上的 pi", () => {
+test("resolvePi:都没有时回落到 PATH 上的 pi", { skip: process.platform !== "win32" }, () => {
 	const empty = tempDir("ais-empty-");
 	const resolved = withEnv("LOCALAPPDATA", empty, () => withEnv("APPDATA", empty, () => resolvePi()));
 	assert.equal(resolved, "pi");
+});
+
+test("isInstalled:按 PATH 判定(Windows 看 .cmd,类 Unix 看无扩展名)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "ais-inst-"));
+	const names = process.platform === "win32" ? ["claude.cmd"] : ["claude"];
+	for (const name of names) writeFileSync(join(dir, name), "#!/bin/sh" + String.fromCharCode(10), "utf8");
+	assert.equal(isInstalled("claude", { PATH: dir }), true);
+	assert.equal(isInstalled("gemini", { PATH: dir }), false);
+});
+
+test("planUpdateSteps:类 Unix 上用 $SHELL 执行,步骤与 Windows 一致", () => {
+	if (process.platform === "win32") return;
+	const steps = planUpdateSteps({ piBin: "/usr/local/bin/pi", gitBash: "/bin/bash" });
+	assert.ok(steps.length >= 2, "pi 本体与扩展恒在");
+	assert.equal(steps[0].command, "/bin/bash");
+	assert.match(steps[0].args[1], /"\/usr\/local\/bin\/pi" update/);
 });

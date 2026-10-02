@@ -45,3 +45,19 @@ test("shellPromptLabel:展示用名称", () => {
 	assert.equal(shellPromptLabel(PWSH), "PowerShell");
 	assert.equal(shellPromptLabel(CMD), "cmd");
 });
+
+test("shellFlavor:类 Unix 的 sh/zsh 也按 POSIX 处理", () => {
+	assert.equal(shellFlavor("/bin/sh"), "bash");
+	assert.equal(shellFlavor("/usr/bin/zsh"), "bash");
+	assert.equal(shellFlavor("/usr/bin/dash"), "bash");
+	assert.equal(shellFlavor("/bin/bash"), "bash");
+	assert.equal(shellFlavor("C:\Program Files\Git\bin\bash.exe"), "bash");
+	assert.equal(shellFlavor("C:\Windows\System32\cmd.exe"), "cmd");
+});
+
+test("resolveShell:类 Unix 上优先 $SHELL", { skip: process.platform === "win32" }, () => {
+	const env = { SHELL: "/usr/bin/zsh" };
+	assert.equal(resolveShell(env, (path) => path === "/usr/bin/zsh"), "/usr/bin/zsh");
+	// $SHELL 不可用时退回 bash(候选顺序)
+	assert.equal(resolveShell({ SHELL: "/gone/zsh" }, (path) => path === "/bin/bash"), "/bin/bash");
+});

@@ -1,9 +1,10 @@
 /**
- * Shell 适配层:让"接管终端 / 分屏面板"在 Git Bash 与 PowerShell 下都能工作。
+ * Shell 适配层:让"接管终端 / 分屏面板 / 新标签恢复"在各平台都能工作。
  *
- * 选择顺序:AIS_SHELL 指定 > 自动探测(Git Bash 优先,其次 PowerShell,最后 cmd)
+ * Windows:AIS_SHELL 指定 > 自动探测(Git Bash 优先,其次 PowerShell,最后 cmd)
+ * Linux/macOS:$SHELL > /bin/bash > /bin/sh(POSIX 家族,统一走 -lc)
  * 每种 shell 的启动参数不同:
- *   bash       -lc "<command>"(命令结束后可 exec bash 保持交互)
+ *   bash/POSIX -lc "<command>"(命令结束后可 exec 保持交互)
  *   powershell -NoLogo -NoProfile -Command "<command>"(保持交互用 -NoExit)
  *   cmd        /d /s /c "<command>"
  */
@@ -17,11 +18,14 @@ export type ShellFlavor = "bash" | "powershell" | "cmd";
 export function shellFlavor(shellPath: string): ShellFlavor {
 	const lower = shellPath.toLowerCase().replace(/\\/g, "/");
 	if (lower.includes("powershell") || lower.endsWith("/pwsh") || lower.endsWith("/pwsh.exe")) return "powershell";
-	if (lower.includes("bash") || lower.includes("sh.exe") || lower.endsWith("/sh")) return "bash";
+	if (/(^|\/)(ba|z|da|k|fi)?sh(\.exe)?$/.test(lower) || lower.includes("bash") || lower.includes("sh.exe")) return "bash";
 	return "cmd";
 }
 
 function candidates(env: NodeJS.ProcessEnv): string[] {
+	if (process.platform !== "win32") {
+		return [env.SHELL ?? "", "/bin/bash", "/usr/bin/bash", "/bin/sh"].filter((candidate) => candidate.length > 0);
+	}
 	const programFiles = env.ProgramFiles ?? "C:\\Program Files";
 	const programFilesX86 = env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
 	const systemRoot = env.SystemRoot ?? "C:\\Windows";
@@ -42,7 +46,9 @@ export function resolveShell(env: NodeJS.ProcessEnv = process.env, exists: (path
 	const explicit = (env.AIS_SHELL ?? "").trim();
 	if (explicit) return explicit;
 	const found = candidates(env).find((candidate) => exists(candidate));
-	return found ?? candidates(env)[candidates(env).length - 1];
+	if (found) return found;
+	const list = candidates(env);
+	return list[list.length - 1] ?? "/bin/sh";
 }
 
 export interface ShellArgs {
@@ -78,6 +84,7 @@ export function shellArgs(shellPath: string, command: string, options: { keepAli
 export function shellPromptLabel(shellPath: string): string {
 	const flavor = shellFlavor(shellPath);
 	if (flavor === "powershell") return "PowerShell";
-	if (flavor === "bash") return "Git Bash";
-	return "cmd";
+	if (flavor === "cmd") return "cmd";
+	// Windows 上的 bash 一定来自 Git for Windows;类 Unix 上就直接报 shell 名
+	return process.platform === "win32" ? "Git Bash" : shellPath.split("/").pop() || "bash";
 }

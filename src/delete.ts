@@ -99,7 +99,7 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 	const plan = await planDelete(view, options);
 	if (!plan.supported || !plan.path) return { ok: false, detail: plan.reason ?? "不可删除" };
 
-	// 1) 优先送系统回收站(用户可在资源管理器里还原)
+	// 1) 优先送系统回收站(Windows:资源管理器;Linux:freedesktop 回收站)
 	const useSystem = options.allowSystemRecycle ?? canRecycleToSystem();
 	let how = "";
 	let fallbackNote = "";
@@ -107,7 +107,7 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 		const recycle = options.recycle ?? recycleToSystem;
 		const result = await recycle(plan.path);
 		if (result.ok) {
-			how = "已放入系统回收站(可在资源管理器还原)";
+			how = process.platform === "win32" ? "已放入系统回收站(可在资源管理器还原)" : "已放入回收站(可在文件管理器还原)";
 		} else {
 			fallbackNote = `(系统回收站不可用:${result.detail ?? "未知原因"})`;
 		}

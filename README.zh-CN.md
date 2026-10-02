@@ -39,14 +39,49 @@
 | 拓展 | 核心可被拓展增强(**同页分屏**由拓展 [tui-panes](https://github.com/Zzz210s/tui-panes) 提供);核心不引用任何具体拓展,缺失时功能不受影响 |
 | 终端兼容 | 字形与分隔符全部 ASCII(宽度不确定字符会因字体按双宽渲染而错位);整屏顺序重绘(ConPTY 会重写逐行绝对定位);末列留白避免折行挂起 |
 
-## 安装与运行
+## 安装
+
+**一键安装**(下载对应平台的产物,解压后运行安装器):
+
+| 平台 | 下载 | 安装 |
+|---|---|---|
+| Windows | `ai-session-hub-<版本>-windows.zip` | 解压后 `powershell -ExecutionPolicy Bypass -File install.ps1` |
+| Linux | `ai-session-hub-<版本>-linux.tar.gz` | 解压后 `./install.sh` |
+
+产物在 [Releases](https://github.com/Zzz210s/ai-session-hub/releases) 页;也可以在仓库里直接跑同一个安装器:
 
 ```bash
-bash setup.sh        # 安装 pi 心跳扩展(可选,提升活性判定精度)+ 生成 ~/bin/ais
-ais                  # 打开 TUI 看板
+./install.sh                                  # Linux:装到 ~/.local/share/ai-session-hub,命令落到 ~/.local/bin/ais
+./install.sh --yes --install-node             # 缺 Node 时顺带从 nodejs.org 装官方 Node 24
+./install.sh --uninstall                      # 卸载(删程序目录 + 撤 PATH 条目)
+
+powershell -ExecutionPolicy Bypass -File install.ps1            # Windows:装到 %LOCALAPPDATA%\Programsi-session-hub
+powershell -ExecutionPolicy Bypass -File install.ps1 -Yes -InstallNode
+powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 ```
 
-**零依赖**:核心与 TUI 只用 Node 内建能力(无 npm 依赖,不需要 `npm install`)。要求 Node ≥ 24(用到原生 TypeScript 执行与 `node:sqlite`)、Windows Terminal、PowerShell(系统自带)。
+安装器只做四件事:检查 Node(≥ 24)、复制程序、把命令目录加入**用户** PATH(不需要管理员)、跑一次 `ais doctor` 自检。它**不**拉任何仓库、不跑别人的 `setup.sh`、不动别人的配置;会话缓存(`~/.ai-session-hub`)与心跳注册表(`~/.ai-sessions`)在卸载时保留。
+
+**手动安装**(从仓库直接跑):
+
+```bash
+git clone https://github.com/Zzz210s/ai-session-hub.git ~/ai-session-hub
+bash ~/ai-session-hub/setup.sh        # 可选:安装 pi 心跳扩展(提升活性判定精度)+ 生成 ~/bin/ais
+~/ai-session-hub/bin/ais              # 直接跑也行(仓库自带启动器,相对自身解析路径)
+```
+
+**零依赖**:核心与 TUI 只用 Node 内建能力(无 npm 依赖,不需要 `npm install`)。要求 **Node ≥ 24**(用到原生 TypeScript 执行与 `node:sqlite`)。
+
+**平台差异**:
+
+| | Windows | Linux |
+|---|---|---|
+| 实况探测 | PowerShell + UI Automation(进程 + Windows Terminal 标签) | `ps`(进程)+ 心跳注册表 |
+| 聚焦窗口 | UI Automation 选中标签页 | `wmctrl` 或 `xdotool`(装一个即可) |
+| 删除会话 | 系统回收站(资源管理器可还原) | freedesktop 回收站(`~/.local/share/Trash`) |
+| 新窗口恢复 | Windows Terminal 新标签 | tmux 新窗口,或 `$TERMINAL` / `x-terminal-emulator` |
+
+macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程;安装器会直接说明)。
 
 ## 启动前自更新
 

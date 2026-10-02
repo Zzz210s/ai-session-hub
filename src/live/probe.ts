@@ -8,7 +8,19 @@
 
 import { cacheDir, readCache, ttlFromEnv, writeCache } from "../cache.ts";
 import { join } from "node:path";
-import { probeLiveUncached, type LiveSnapshot } from "./windows.ts";
+import { probeLiveUncached as probeWindows, type LiveSnapshot } from "./windows.ts";
+import { probeLiveLinux } from "./linux.ts";
+
+/** 当前平台:Windows 走 PowerShell + UI Automation,其它走 ps */
+
+export function platformProbe(): () => Promise<LiveSnapshot> {
+	return process.platform === "win32" ? probeWindows : probeLiveLinux;
+}
+
+/** 默认探测实现(按平台) */
+export function probeLiveUncached(): Promise<LiveSnapshot> {
+	return platformProbe()();
+}
 import { planFetch } from "../stale.ts";
 
 let refreshing: Promise<void> | null = null;

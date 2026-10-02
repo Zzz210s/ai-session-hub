@@ -1,8 +1,7 @@
 name: test
 
-# 只跑跨平台可跑的部分:单元测试 + 脚本语法检查。
-# Windows 专属能力(UIA 标签聚焦、系统回收站、ConPTY)在 CI 里无法覆盖,
-# 那部分靠本机 PTY 端到端验证(见 README 的验证章节)。
+# 两个平台都跑:Windows 覆盖 PowerShell 相关路径,Linux 覆盖 ps 探测 / freedesktop 回收站 / install.sh。
+# 无法在 CI 覆盖的部分(UI Automation 聚焦真实窗口、系统回收站还原)靠本机端到端验证(见 README)。
 on:
   push:
     branches: [master]
@@ -11,7 +10,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,12 +23,47 @@ jobs:
           node-version: "24"
 
       - name: 单元测试
-        run: node --test test/*.test.js
+        run: node --test "test/*.test.js"
 
-      - name: shell 语法检查
-        run: bash -n setup.sh
+      - name: 版本与自检冒烟
+        shell: bash
+        run: |
+          set -e
+          node --no-warnings src/cli.ts version
+          node --no-warnings src/cli.ts doctor | head -20
+
+      - name: 安装器冒烟(Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ais-install"
+          ./install.ps1 -Dir $dir -Yes
+          & (Join-Path $dir "bin\ais.cmd") version
+          ./install.ps1 -Dir $dir -Uninstall
+          if (Test-Path $dir) { throw "卸载后目录仍在" }
+
+      - name: 安装器冒烟(Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
+          dir="$RUNNER_TEMP/ais-install"
+          bash install.sh --yes --no-modify-path --dir="$dir"
+          "$dir/bin/ais" version
+          bash install.sh --yes --uninstall --dir="$dir"
+          [ ! -d "$dir" ] || { echo "卸载后目录仍在"; exit 1; }
+
+      - name: 打包冒烟
+        shell: bash
+        run: |
+          set -e
+          version="$(node -p "require('./package.json').version")"
+          if [ "$RUNNER_OS" = "Windows" ]; then target=windows; else target=linux; fi
+          archive="$(bash scripts/package.sh "$version" "$target")"
+          ls -lh "$archive"
 
       - name: 检查是否误提交本机路径/密钥
+        if: runner.os == 'Linux'
         run: |
           set -e
           # 仓库是公开的:不应出现本机用户名、家目录绝对路径或任何 token

@@ -20,11 +20,32 @@
  */
 
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { preflight, type Step } from "./preflight.ts";
+
+const IS_WINDOWS = process.platform === "win32";
+const PATH_SEP = IS_WINDOWS ? ";" : ":";
 
 export interface StartOptions {
 	disabled?: boolean;
 	onProgress?: (message: string) => void;
+}
+
+/**
+ * 执行更新命令用的 POSIX shell。Windows 上必须是 Git Bash 的绝对路径
+ * (裸 `bash` 可能落到 WSL);类 Unix 上就是用户的 $SHELL / bash。
+ */
+export function resolvePreflightShell(): string | undefined {
+	if (IS_WINDOWS) return resolveGitBash();
+	for (const candidate of [(process.env.SHELL ?? "").trim(), "/bin/bash", "/usr/bin/bash", "/bin/sh"]) {
+		if (!candidate) continue;
+		try {
+			if (existsSync(candidate)) return candidate;
+		} catch {
+			/* 继续 */
+		}
+	}
+	return undefined;
 }
 
 /** Git Bash 绝对路径(避免落到 WSL 的 bash) */
@@ -46,6 +67,25 @@ export function resolveGitBash(): string | undefined {
  * 旧的 `<local>/pnpm/pi` shim 指向 global/5(旧版本),曾让 ais 拉起的会话一直跑旧 pi + 旧扩展集。
  */
 export function resolvePi(): string {
+	if (!IS_WINDOWS) {
+		// 类 Unix:先看 PATH(pnpm/npm/bun 的 shim 都是可执行文件),再看 pnpm 的常见安装位置
+		for (const dir of (process.env.PATH ?? "").split(PATH_SEP)) {
+			if (!dir) continue;
+			try {
+				if (existsSync(`${dir}/pi`)) return `${dir}/pi`;
+			} catch {
+				/* 继续 */
+			}
+		}
+		for (const candidate of [`${homedir()}/.local/share/pnpm/pi`, `${homedir()}/.local/bin/pi`, "/usr/local/bin/pi"]) {
+			try {
+				if (existsSync(candidate)) return candidate;
+			} catch {
+				/* 继续 */
+			}
+		}
+		return "pi";
+	}
 	const local = process.env.LOCALAPPDATA ?? "";
 	const roaming = process.env.APPDATA ?? "";
 	for (const candidate of [`${local}/pnpm/bin/pi.CMD`, `${local}/pnpm/bin/pi`, `${local}/pnpm/pi.CMD`, `${local}/pnpm/pi`, `${roaming}/npm/pi.CMD`]) {
@@ -70,13 +110,16 @@ function bashStep(
 }
 
 /** 本机装了哪些 CLI(只给装了的排步骤) */
-function isInstalled(bin: string): boolean {
-	const npmDir = `${process.env.APPDATA ?? ""}/npm`;
-	if (existsSync(`${npmDir}/${bin}.cmd`)) return true;
-	return (process.env.PATH ?? "")
-		.split(";")
+export function isInstalled(bin: string, env: NodeJS.ProcessEnv = process.env): boolean {
+	if (IS_WINDOWS) {
+		const npmDir = `${env.APPDATA ?? ""}/npm`;
+		if (existsSync(`${npmDir}/${bin}.cmd`)) return true;
+	}
+	const names = IS_WINDOWS ? [`${bin}.cmd`, bin] : [bin];
+	return (env.PATH ?? "")
+		.split(PATH_SEP)
 		.filter(Boolean)
-		.some((dir) => existsSync(`${dir}/${bin}.cmd`) || existsSync(`${dir}/${bin}`));
+		.some((dir) => names.some((name) => existsSync(`${dir}/${name}`)));
 }
 
 /** 全部更新步骤(不检测,直接跑);没有 Git Bash 时返回空(不做半套) */
@@ -112,7 +155,7 @@ export function formatDuration(ms: number): string {
 export async function startPreflight(options: StartOptions = {}): Promise<string | undefined> {
 	try {
 		if (options.disabled || process.env.AIS_NO_UPDATE === "1") return undefined;
-		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: resolveGitBash() });
+		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: resolvePreflightShell() });
 		if (steps.length === 0) return undefined;
 		const say = options.onProgress ?? ((message: string) => process.stdout.write("[ais] " + message + "\n"));
 		say("执行 " + steps.length + " 项更新…");

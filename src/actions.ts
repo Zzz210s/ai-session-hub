@@ -7,7 +7,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
 import { focusTab, focusWindow } from "./live/windows.ts";
+import { focusWindowLinux, openInNewTerminal } from "./live/linux.ts";
 import { resolveShell, shellArgs } from "./shell.ts";
+
+const IS_WINDOWS = process.platform === "win32";
 
 /**
  * 解析 CLI 可执行文件的绝对路径。
@@ -18,6 +21,21 @@ function resolveCliCommand(tool: SessionView["tool"]): string {
 	// 显式覆盖优先(AIS_PI_BIN / AIS_CLAUDE_BIN)
 	const override = tool === "pi" ? process.env.AIS_PI_BIN : tool === "claude" ? process.env.AIS_CLAUDE_BIN : undefined;
 	if (override && existsSync(override)) return override.replace(/\\/g, "/");
+	if (!IS_WINDOWS) {
+		// 类 Unix:各 CLI 的入口就在 PATH 上(pnpm/npm/bun 的 shim 都是可执行脚本)
+		const fromPathUnix = (process.env.PATH ?? "")
+			.split(":")
+			.map((dir) => (dir ? `${dir}/${tool}` : ""))
+			.filter((candidate) => candidate.length > 0)
+			.find((candidate) => {
+				try {
+					return existsSync(candidate);
+				} catch {
+					return false;
+				}
+			});
+		return fromPathUnix ?? tool;
+	}
 	const local = process.env.LOCALAPPDATA ?? "";
 	const roaming = process.env.APPDATA ?? "";
 	// PATH 上能跑到的也算候选(用户 shell 实际用的那个)
@@ -73,8 +91,14 @@ export interface ActionResult {
 	detail: string;
 }
 
-/** 聚焦该会话已运行的终端标签(需要相关标签标题能与会话名匹配) */
+/** 聚焦该会话已运行的终端窗口 */
 export async function focusSession(view: SessionView): Promise<ActionResult> {
+	if (!IS_WINDOWS) {
+		// Linux:按会话名找窗口(wmctrl / xdotool),名字来自 /name 或心跳
+		const needle = view.name?.trim() || view.topic?.trim() || "";
+		const result = await focusWindowLinux(needle);
+		return { ok: result.ok, detail: result.detail };
+	}
 	const tab = view.live?.tab;
 	if (tab) {
 		if (tab.index < 0) return { ok: false, detail: "该窗口未枚举到标签页" };
@@ -90,12 +114,17 @@ export async function focusSession(view: SessionView): Promise<ActionResult> {
 	return { ok: false, detail: "该会话没有可定位的终端窗口(未运行或标题不匹配)" };
 }
 
-/** 在 Windows Terminal 新标签里恢复该会话 */
+/** 在新标签/新窗口里恢复该会话 */
 export function resumeInNewTab(view: SessionView): ActionResult {
 	const command = resumeCommand(view);
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool} 的恢复命令` };
 	const cwd = view.cwd && view.cwd.length > 0 ? view.cwd : process.cwd();
 	const title = view.name?.trim() || view.topic?.trim() || view.id.slice(0, 8);
+	if (!IS_WINDOWS) {
+		// Linux:优先 tmux 新窗口,其次 $TERMINAL / x-terminal-emulator(同步起,失败由 spawn 报错)
+		const opened = openInNewTerminal(`cd ${shellQuote(cwd)} && ${command}`, cwd);
+		return opened.ok ? { ok: true, detail: `${opened.detail}: ${command}` } : opened;
+	}
 	try {
 		// wt 的两条硬规则:
 		//   1) 尾部命令必须是"程序 + 参数"(wt 不经 shell 执行,不能只给一串命令)
@@ -119,21 +148,32 @@ export function resumeInNewTab(view: SessionView): ActionResult {
 	}
 }
 
-/** 复制恢复命令到剪贴板(兜底动作,不依赖 wt) */
+/** 复制恢复命令到系统剪贴板 */
 export function copyResumeCommand(view: SessionView): ActionResult {
 	const command = resumeCommand(view);
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool}` };
+	const clip = IS_WINDOWS ? "clip.exe" : (process.env.WAYLAND_DISPLAY ? "wl-copy" : process.env.DISPLAY ? "xclip" : "wl-copy");
+	const args = clip === "xclip" ? ["-selection", "clipboard"] : [];
 	return new Promise<ActionResult>((resolve) => {
-		const child = execFile("clip.exe", (error) => {
-			resolve(error ? { ok: false, detail: `复制失败: ${error.message}` } : { ok: true, detail: `已复制: ${command}` });
+		const child = execFile(clip, args, (error) => {
+			resolve(
+				error
+					? { ok: false, detail: `复制失败(${clip}):${error.message.split("\n")[0]}\n可手动复制:${command}` }
+					: { ok: true, detail: `已复制: ${command}` },
+			);
 		});
 		child.stdin?.end(command);
 	}) as unknown as ActionResult;
 }
 
-/** 智能默认动作:运行中优先聚焦,否则新标签恢复 */
+/** 供 shell 里安全地嵌入一个路径 */
+function shellQuote(value: string): string {
+	return IS_WINDOWS ? `"${value}"` : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/** 智能默认动作:运行中优先聚焦,否则新窗口/新标签恢复 */
 export async function smartAction(view: SessionView): Promise<ActionResult> {
-	if (view.state === "running" && view.live?.tab) return focusSession(view);
+	if (view.state === "running" && (view.live?.tab || !IS_WINDOWS)) return focusSession(view);
 	return resumeInNewTab(view);
 }
 

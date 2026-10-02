@@ -53,21 +53,10 @@ export function findPwsh(env: NodeJS.ProcessEnv = process.env, fileExists: (p: s
 	}
 	return undefined;
 }
-export function classifyProcess(cmd: string): { tool: Tool; internal: boolean } | null {
-	const lower = cmd.toLowerCase();
-	if (lower.includes("pi-coding-agent")) {
-		// 子代理以 --mode json 运行,不算独立会话
-		const internal = /--mode\s+json/.test(lower);
-		return { tool: "pi", internal };
-	}
-	if (lower.includes("@anthropic-ai") || lower.includes("claude-code")) {
-		return { tool: "claude", internal: false };
-	}
-	if (/[\\/]opencode|opencode-ai/.test(lower)) {
-		return { tool: "opencode", internal: false };
-	}
-	return null;
-}
+// 进程判定是跳平台共用的,放在 classify.ts;这里导入供本模块使用,并原样再导出
+import { classifyProcess } from "./classify.ts";
+
+export { classifyProcess };
 
 let engine: string | null = null;
 

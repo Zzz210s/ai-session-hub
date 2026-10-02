@@ -25,6 +25,11 @@ import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
 import { countHeartbeats, sweepHeartbeats } from "./live/heartbeat.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
+import { hasCommand } from "./live/linux.ts";
+import { canRecycleToSystem } from "./recycle.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { configuredExtensions } from "./extensions.ts";
 import { parseArgs } from "./args.ts";
 import { describeToolColors } from "./theme.ts";
@@ -56,8 +61,23 @@ export function toJson(views: SessionView[]): string {
 	);
 }
 
+/** 版本号来自 package.json(单一真源) */
+export function readVersion(): string {
+	try {
+		const here = dirname(fileURLToPath(import.meta.url));
+		const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as { version?: string };
+		return pkg.version ?? "0.0.0";
+	} catch {
+		return "0.0.0";
+	}
+}
+
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
+	if (args.command === "version") {
+		console.log(`ais ${readVersion()} (${process.platform}/${process.arch}, node ${process.version})`);
+		return;
+	}
 	// --fast:接受 ≤60 秒的旧实况快照,不等真探测(通常 0.4-0.6 秒出结果);--no-live 则完全不探测
 	const { views, live, heartbeatCount } = await loadViews({
 		tools: args.tools,
@@ -80,10 +100,16 @@ async function main(): Promise<void> {
 		console.log(`工具配色(256 色): ${describeToolColors()}(可用 NO_COLOR / AIS_COLOR=0 关闭)`);
 		const extensionList = configuredExtensions();
 		console.log(`拓展: ${extensionList.length ? extensionList.join(", ") : "(无 —— 核心单独运行)"}`);
-		console.log(`控制台窗口: ${live.consoleWindows.length}(非 Windows Terminal 的兜底聚焦)`);
+		console.log(`平台: ${process.platform}${process.platform === "win32" ? "(实况探测用 PowerShell + UI Automation)" : "(实况探测用 ps;窗口聚焦需 wmctrl 或 xdotool)"}`);
+		if (process.platform === "win32") console.log(`控制台窗口: ${live.consoleWindows.length}(非 Windows Terminal 的兜底聚焦)`);
 		const shell = resolveShell();
 		console.log(`本机 shell: ${shell}(${shellFlavor(shell)} / ${shellPromptLabel(shell)})`);
-		console.log("接管/分屏都用该 shell;可用 AIS_SHELL 覆盖(例如 AIS_SHELL=powershell.exe)");
+		console.log("接管/分屏都用该 shell;可用 AIS_SHELL 覆盖");
+		if (process.platform !== "win32") {
+			const focusTools = [await hasCommand("wmctrl") ? "wmctrl" : "", await hasCommand("xdotool") ? "xdotool" : ""].filter(Boolean);
+			console.log(`窗口聚焦工具: ${focusTools.length ? focusTools.join(" / ") : "缺少(装 wmctrl 或 xdotool 后可用)"}`);
+			console.log(`回收站: ${canRecycleToSystem() ? "freedesktop(~/.local/share/Trash)" : "内部回收目录"}(删除的会话可在文件管理器还原)`);
+		}
 		if (live.error) console.log(`探测错误: ${live.error}`);
 		return;
 	}

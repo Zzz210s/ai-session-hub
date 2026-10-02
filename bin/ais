@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ais —— Linux/macOS 启动器(等价于 Windows 侧的 bin/ais.cmd)
+# 相对自身解析仓库根,所以整目录搬走后依然可用。
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
+NODE_BIN="$(command -v node || true)"
+# 安装器可能把 Node 装在自己的目录里(--install-node),此时 PATH 里未必有 node
+if [ -z "$NODE_BIN" ] && [ -x "${XDG_DATA_HOME:-$HOME/.local/share}/node/bin/node" ]; then
+  NODE_BIN="${XDG_DATA_HOME:-$HOME/.local/share}/node/bin/node"
+fi
+if [ -z "$NODE_BIN" ]; then
+  echo "ais: 找不到 node(需要 Node 24+);重跑安装器加 --install-node,或把 node 放进 PATH" >&2
+  exit 127
+fi
+exec "$NODE_BIN" --no-warnings "$REPO/src/cli.ts" "$@"

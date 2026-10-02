@@ -41,18 +41,52 @@ This tool fills that gap: it discovers sessions you already started, annotates t
 | Live refresh | 3-second poll; redraws only when the composed screen actually changes |
 | Extensions | the core can be extended (split panes come from the [tui-panes](https://github.com/Zzz210s/tui-panes) extension); the core references no concrete extension and works fine without any |
 
-## Install & run
+## Install
+
+**One-command install** (grab the artifact for your platform, unpack, run the installer):
+
+| Platform | Download | Install |
+|---|---|---|
+| Windows | `ai-session-hub-<version>-windows.zip` | unpack, then `powershell -ExecutionPolicy Bypass -File install.ps1` |
+| Linux | `ai-session-hub-<version>-linux.tar.gz` | unpack, then `./install.sh` |
+
+Artifacts live on the [Releases](https://github.com/Zzz210s/ai-session-hub/releases) page; the very same installers are in the repo:
+
+```bash
+./install.sh                                  # Linux: installs to ~/.local/share/ai-session-hub, command at ~/.local/bin/ais
+./install.sh --yes --install-node             # also fetch official Node 24 from nodejs.org when missing
+./install.sh --uninstall                      # remove program dir + PATH entry
+
+powershell -ExecutionPolicy Bypass -File install.ps1            # Windows: installs to %LOCALAPPDATA%\Programsi-session-hub
+powershell -ExecutionPolicy Bypass -File install.ps1 -Yes -InstallNode
+powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
+```
+
+The installer does exactly four things: check Node (>= 24), copy the program, add the command directory to the **user** PATH (no admin needed), run `ais doctor` once. It never clones repos, never runs someone else's `setup.sh`, never touches other config; the session cache (`~/.ai-session-hub`) and the heartbeat registry (`~/.ai-sessions`) survive uninstall.
+
+**Manual install** (run straight from a clone):
 
 ```bash
 git clone https://github.com/Zzz210s/ai-session-hub.git ~/ai-session-hub
-bash ~/ai-session-hub/setup.sh     # installs the optional pi heartbeat extension + creates ~/bin/ais
-ais                                 # open the TUI board
+bash ~/ai-session-hub/setup.sh        # optional: installs the pi heartbeat extension + creates ~/bin/ais
+~/ai-session-hub/bin/ais              # or just run the launcher shipped in the repo (resolves its own path)
 ```
 
-Zero required dependencies for the core: listing, filtering, focusing and attach need only Node ≥ 24, Windows Terminal and PowerShell. The **split-pane** feature needs the optional `tui-panes` package:
+Zero required dependencies for the core: listing, filtering, focusing and attach need only **Node >= 24**. The **split-pane** feature needs the optional `tui-panes` package:
 ```bash
 npm install          # installs tui-panes (optionalDependency)
 ```
+
+**Platform differences**:
+
+| | Windows | Linux |
+|---|---|---|
+| Live probe | PowerShell + UI Automation (processes + Windows Terminal tabs) | `ps` (processes) + heartbeat registry |
+| Focus a window | UI Automation selects the tab | `wmctrl` or `xdotool` (either one) |
+| Deleting a session | Windows Recycle Bin (restorable in Explorer) | freedesktop trash (`~/.local/share/Trash`) |
+| Resume in a new window | new Windows Terminal tab | tmux window, or `$TERMINAL` / `x-terminal-emulator` |
+
+macOS is not supported yet (BSD `ps` lacks `-o etimes`, so the live probe cannot see processes; the installer says so plainly).
 
 ## Startup self-update
 

@@ -33,6 +33,7 @@ export function parseArgs(argv: string[]): Args {
 		else if (token === "--fast") args.fast = true;
 		else if (token === "--live") args.liveOnly = true;
 		else if (token === "--no-update" || token === "--skip-update") args.noUpdate = true;
+		else if (token === "--version" || token === "-v") args.command = args.command || "version";
 		else if (token === "--yes" || token === "-y") args.yes = true;
 		else if (token === "--no-cache") args.noCache = true;
 		else if (token.startsWith("--limit")) args.limit = Number(token.split("=")[1] ?? 40) || 40;
