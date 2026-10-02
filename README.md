@@ -6,7 +6,7 @@ A host-level **AI session overview** for your terminal (TUI): one keyboard-drive
 
 ```
  AI 会话总览                          共 42 | 运行中 3 | 需关注 1
- 1 运行中 3  2 需关注 1  3 全部 42  4 历史 39        搜索: (按 / 输入)
+ 1 运行中 3  2 需关注 1  3 全部 42  4 历史 39        搜索: config|
  > pi      auth-refactor          auth-refactor
  * pi      docs-cleanup           pi | > tool
    pi      perf-tuning            工作目录  ~/work/api
@@ -16,7 +16,7 @@ A host-level **AI session overview** for your terminal (TUI): one keyboard-drive
                                   进程      pid 4242
                                   终端标签  窗口 12345 - 第 3 个
                                   会话文件  ~/.pi/agent/sessions/...jsonl
- Enter 打开 | a 接管终端 | f 聚焦窗口 | c 复制 | 1-4 筛选 | / 搜索 | q 退出
+ a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出
 ```
 
 The list keeps only **tool + session name** (names you set with `/name` are highlighted in bright yellow); everything else — directory, age, size, pid, terminal tab, session file — lives in the right-hand detail pane.
@@ -86,6 +86,9 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `d` | delete the selected session (asks for confirmation; see below) |
 | `1` `2` `3` `4` | filter: running / needs attention / all / historical |
 | `/` | search (name, directory, tool, session id; space-separated terms) |
+| `Esc` | while searching: cancel the search and clear the query |
+| `Enter` | while searching: finish and keep the filter |
+| `Backspace` | while searching: delete a character; press once more on an empty query to leave search |
 | `r` | refresh now |
 | `q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
 

@@ -31,7 +31,17 @@ const CSI_ARROWS: Record<string, KeyName> = {
 	F: "end",
 };
 
-export function parseKeys(buffer: string): ParseResult {
+/**
+ * 不完整的转义序列如何收尾。
+ * - 默认:留在 rest 等后续字节(PTY 会把一次按键分片送来,不能把片段当成 Esc)
+ * - flush(等待超时后):一次性 Esc 按下 → `escape`;其它残片(如孤立的 `ESC [`)丢弃
+ */
+function flushOrRest(keys: KeyName[], buffer: string, index: number, options: { flush?: boolean }): ParseResult {
+	if (buffer[index] === "\u001b" && options.flush) return { keys, rest: "" };
+	return { keys, rest: buffer.slice(index) };
+}
+
+export function parseKeys(buffer: string, options: { flush?: boolean } = {}): ParseResult {
 	const keys: KeyName[] = [];
 	let index = 0;
 	while (index < buffer.length) {
@@ -40,7 +50,7 @@ export function parseKeys(buffer: string): ParseResult {
 		if (ch === "\u001b") {
 			// SS3:ESC O A/B/C/D(H/F 变体)
 			if (buffer[index + 1] === "O") {
-				if (index + 2 >= buffer.length) return { keys, rest: buffer.slice(index) };
+				if (index + 2 >= buffer.length) return flushOrRest(keys, buffer, index, options);
 				const code = buffer[index + 2];
 				const name = CSI_ARROWS[code];
 				if (name) {
@@ -54,7 +64,7 @@ export function parseKeys(buffer: string): ParseResult {
 			// CSI:ESC [ ... 终止符
 			if (buffer[index + 1] === "[") {
 				const match = /^\u001b\[([0-9;]*)([A-Za-z~])/.exec(buffer.slice(index));
-				if (!match) return { keys, rest: buffer.slice(index) }; // 分片:等后续
+				if (!match) return flushOrRest(keys, buffer, index, options); // 分片:等后续
 				const params = match[1];
 				const command = match[2];
 				if (command === "~") {
@@ -71,7 +81,15 @@ export function parseKeys(buffer: string): ParseResult {
 				continue;
 			}
 			// 单独的 ESC:可能是退出,也可能是不完整序列的开头
-			if (index + 1 >= buffer.length) return { keys, rest: buffer.slice(index) };
+			if (index + 1 >= buffer.length) {
+				// flush(等待超时后)时不再等:这就是一次 Esc 按下
+				if (options.flush) {
+					keys.push("escape");
+					index += 1;
+					continue;
+				}
+				return { keys, rest: buffer.slice(index) };
+			}
 			keys.push("escape");
 			index += 1;
 			continue;

@@ -59,3 +59,15 @@ test("parseKeys:分片安全 —— 不完整的转义序列留在 rest,不误�
 test("parseKeys:真正的 ESC(后面跟普通字符)按退出处理", () => {
 	assert.deepEqual(names("\u001bq"), ["escape", "q"]);
 });
+
+test("parseKeys(flush):超时收尾时,孤立的 ESC 就是一次 Esc 按下", () => {
+	// 这曾经是"搜索态无法退出"的根因:分片保护把孤立的 ESC 一直留在 rest 里,永远不会派发
+	const lone = parseKeys("", { flush: true });
+	assert.deepEqual(lone.keys, ["escape"]);
+	assert.equal(lone.rest, "");
+
+	// 其它残片(孤立的 CSI 前缀)在收尾时丢弃,不误报成 Esc
+	const broken = parseKeys("[", { flush: true });
+	assert.deepEqual(broken.keys, []);
+	assert.equal(broken.rest, "");
+});

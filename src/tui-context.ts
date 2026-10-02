@@ -43,6 +43,7 @@ export function createContext(deps: ContextDeps): KeyContext {
 			ui.query = ui.query.slice(0, -1);
 			ui.cursor = 0;
 		},
+		queryLength: () => ui.query.length,
 		clearQuery: () => {
 			ui.query = "";
 			ui.cursor = 0;

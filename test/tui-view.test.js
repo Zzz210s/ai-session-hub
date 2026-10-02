@@ -140,3 +140,11 @@ test("buildTuiState:筛选与搜索同时生效,光标在筛选后的行内夹�
 	const stored = buildTuiState({ allRows: rows, filter: "stored", query: "", searchMode: false, cursor: 0, width: 80, height: 10, now: NOW });
 	assert.equal(stored.rows.length, 2, "历史筛选排除 running");
 });
+
+test("搜索态:底部提示换成搜索键位并写明退出方式", () => {
+	const text = renderScreen(state({ searchMode: true, query: "abc" })).map(stripAnsi);
+	const footer = text.filter((line) => line.includes("取消搜索")).pop() ?? "";
+	assert.match(footer, /Esc 取消搜索/, "必须明写 Esc 退出");
+	assert.match(footer, /⌫ 删空退出/, "并给出第二条退出路径");
+	assert.ok(!footer.includes("d 删除"), "搜索态下其它快捷键不生效,不该继续显示");
+});

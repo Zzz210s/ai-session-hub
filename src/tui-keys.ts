@@ -22,6 +22,8 @@ export interface KeyContext {
 	setSearching(value: boolean): void;
 	appendQuery(char: string): void;
 	backspaceQuery(): void;
+	/** 当前搜索词长度(用于"删空后再按一次退出搜索") */
+	queryLength(): number;
 	clearQuery(): void;
 	move(delta: number): void;
 	jumpTo(position: "top" | "bottom"): void;
@@ -116,6 +118,12 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 			return void ctx.act("smart");
 		case "backspace":
 			if (ctx.isSearching()) {
+				// 已经删空:再按一次就退出搜索(不用非得去按 Esc)
+				if (ctx.queryLength() === 0) {
+					ctx.setSearching(false);
+					ctx.redraw();
+					return;
+				}
 				ctx.backspaceQuery();
 				ctx.redraw();
 			}

@@ -15,12 +15,19 @@ function fakeContext(overrides = {}) {
 			calls.push(`search:${value}`);
 		},
 		appendQuery(char) {
+			this.query += char;
 			calls.push(`query+${char}`);
 		},
+		query: "",
+		queryLength() {
+			return this.query.length;
+		},
 		backspaceQuery() {
+			this.query = this.query.slice(0, -1);
 			calls.push("query-backspace");
 		},
 		clearQuery() {
+			this.query = "";
 			calls.push("query-clear");
 		},
 		move(delta) {
@@ -95,6 +102,20 @@ test("dispatchKey:搜索态下字符进入查询而非触发动作", async () =>
 	await dispatchKey({ char: "b" }, ctx);
 	await dispatchKey("backspace", ctx);
 	assert.deepEqual(ctx.calls, ["search:true", "redraw", "query+a", "redraw", "query+b", "redraw", "query-backspace", "redraw"]);
+});
+
+test("dispatchKey:搜索词已删空时再按 Backspace 退出搜索(第二条退出路径)", async () => {
+	const ctx = fakeContext();
+	ctx.searching = true;
+	ctx.query = "";
+	await dispatchKey("backspace", ctx);
+	assert.deepEqual(ctx.calls, ["search:false", "redraw"], "删空后再按一次 = 退出搜索");
+
+	const withText = fakeContext();
+	withText.searching = true;
+	withText.query = "abc";
+	await dispatchKey("backspace", withText);
+	assert.deepEqual(withText.calls, ["query-backspace", "redraw"], "还有字时只删字,不退出");
 });
 
 test("dispatchKey:搜索态下 Enter 结束搜索,ESC 结束搜索并清空", async () => {

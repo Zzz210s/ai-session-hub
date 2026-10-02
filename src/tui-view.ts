@@ -147,7 +147,13 @@ function filterBar(state: TuiState): string {
  * 拓展自己的键位由拓展通过 hints 提供(见 filterBar),无拓展时不出现拓展字样。
  */
 function footerText(state: TuiState): string {
-	const keys = state.confirm ? "y 确认 / n 取消" : "a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出";
+	// 搜索态下其它快捷键都不生效(字符会进搜索词),所以键位提示整套换掉 —— 用户不会因为
+	// "提示行只有 a/f/c/d…" 而以为退不出去
+	const keys = state.confirm
+		? "y 确认 / n 取消"
+		: state.searchMode
+			? "输入即筛选 | Enter 完成 | Esc 取消搜索 | ⌫ 删空退出"
+			: "a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出";
 	const message = state.confirm ?? state.message;
 	return message ? `${keys} | ${sanitizeForDisplay(message)}` : keys;
 }

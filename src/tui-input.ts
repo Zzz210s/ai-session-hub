@@ -39,7 +39,8 @@ export function createInputPump(options: InputPumpOptions): InputPump {
 				timer = null;
 				const pending = buffer;
 				buffer = "";
-				for (const key of parseKeys(pending).keys) void dispatchKey(key, options.ctx);
+				// flush:等不到后续字节了 —— 单独的 Esc 要当成一次真实按键(否则 Esc 完全失效)
+				for (const key of parseKeys(pending, { flush: true }).keys) void dispatchKey(key, options.ctx);
 			}, ESCAPE_WAIT_MS);
 		}
 	};
