@@ -357,7 +357,9 @@ single load            30-70 ms (cold first frame under 0.3 s)
 session scan           cold 1-2 s, warm 0.2 s
 ```
 
-Session-name lookup also went from a full streaming scan to a three-tier strategy (appended bytes -> last 8 MB -> first 256 KB): a 197 MB session file used to take 10+ s to scan, now 20 ms.
+Session-name lookup: session files are append-only, so **with a cache only the appended bytes are read** (the normal path, a few ms); without one it walks backwards from the end in chunks, **with no window cap**, until the last `session_info` is found (206 MB scanned in 175 ms here).
+
+> One trap worth recording: an earlier version capped that backward walk at "the last 8 MB" and fell back to the first 256 KB of the file. A name far from the end was missed, the head fallback returned the **first** name, and the visible symptom was **ais showing the old name after a rename**. Windowed lookup was simply wrong; it is uncapped again.
 
 ### Heartbeat registry GC
 
