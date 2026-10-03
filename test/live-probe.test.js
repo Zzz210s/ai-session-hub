@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function tempCache(pattern = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "ais-live-"));
 	const path = join(dir, "live.json");
-	if (pattern.at !== undefined) writeFileSync(path, JSON.stringify({ at: pattern.at, value: pattern.value }), "utf8");
+	if (pattern.at !== undefined) writeFileSync(path, JSON.stringify({ at: pattern.at, version: 2, value: pattern.value }), "utf8");
 	return path;
 }
 

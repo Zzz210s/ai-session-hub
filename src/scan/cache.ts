@@ -7,9 +7,9 @@
  */
 
 import { existsSync } from "node:fs";
-import { readFile, rename, mkdir, writeFile } from "node:fs/promises";
+import { readFile, rename, mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { cacheDir, reviveDates, ttlFromEnv } from "../cache.ts";
+import { cacheDir, CACHE_FORMAT_VERSION, reviveDates, ttlFromEnv } from "../cache.ts";
 
 export interface ScanCacheEntry<T> {
 	size: number;
@@ -22,7 +22,9 @@ export type ScanCache<T> = Record<string, ScanCacheEntry<T>>;
 export async function readScanCache<T>(path: string): Promise<ScanCache<T>> {
 	try {
 		if (!existsSync(path)) return {};
-		const raw = JSON.parse(await readFile(path, "utf8")) as { entries?: ScanCache<T> };
+		const raw = JSON.parse(await readFile(path, "utf8")) as { version?: number; entries?: ScanCache<T> };
+		// 格式版本不符就不认:旧版本可能存了推导错误的值(如旧名字)
+		if (raw?.version !== CACHE_FORMAT_VERSION) return {};
 		return raw?.entries ?? {};
 	} catch {
 		return {};
@@ -33,7 +35,7 @@ export async function writeScanCache<T>(path: string, entries: ScanCache<T>): Pr
 	try {
 		await mkdir(dirname(path), { recursive: true });
 		const tmp = `${path}.${process.pid}.tmp`;
-		await writeFile(tmp, JSON.stringify({ entries }), "utf8");
+		await writeFile(tmp, JSON.stringify({ version: CACHE_FORMAT_VERSION, entries }), "utf8");
 		await rename(tmp, path);
 	} catch {
 		/* 忽略 */
@@ -65,7 +67,12 @@ async function ensureLoaded(ttlMs: number): Promise<void> {
 	if (state.loaded || ttlMs <= 0) return;
 	state.loaded = true;
 	try {
-		const raw = JSON.parse(await readFile(scanCachePath(), "utf8"), reviveDates) as { entries?: ScanCache<unknown> };
+		const raw = JSON.parse(await readFile(scanCachePath(), "utf8"), reviveDates) as { version?: number; entries?: ScanCache<unknown> };
+		// 格式版本不符:整份丢弃(旧版本存的推导结果可能不对)
+		if (raw?.version !== CACHE_FORMAT_VERSION) {
+			state.entries = {};
+			return;
+		}
 		state.entries = raw?.entries ?? {};
 		// 修剪:只保留最近 800 条,避免无限增长
 		const keys = Object.keys(state.entries);

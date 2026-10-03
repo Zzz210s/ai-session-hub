@@ -9,7 +9,8 @@ import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { findSessionName } from "../src/scan/pi.ts";
+import { findSessionName, parsePiSession } from "../src/scan/pi.ts";
+import { cachedScan } from "../src/scan/cache.ts";
 
 const info = (name) => `${JSON.stringify({ type: "session_info", name, timestamp: "2026-10-01T10:00:00.000Z" })}\n`;
 const filler = (count, bytes = 400) => `${JSON.stringify({ type: "message", message: { role: "assistant", content: "x".repeat(bytes) } })}\n`.repeat(count);
@@ -46,4 +47,30 @@ test("无头尾命中时也能拿到中间的名字(逆向块读)", async () => 
 	// 名字埋在中间,前后都有大量内容;靠"尾部 8MB + 头部 256KB"两条路各覆盖一段
 	const file = tempFile(filler(1000) + info("中间的名字") + filler(1000));
 	assert.equal(await findSessionName(file, 999_999), "中间的名字");
+});
+
+test("回归:名字离文件末尾很远时,仍要取最后一条(旧的窗口化查找会退回头部取到第一条)", async () => {
+	// 真实踩到的 bug:窗口化查找(尾部 8MB + 头部 256KB)漏掉"离末尾很远"的 session_info,
+	// 于是退回头部拿到**第一条** —— 改名后 ais 一直显示旧名字
+	// (本机实测:216MB 会话文件里最后一条 session_info 距末尾约 200MB)
+	const file = tempFile(info("旧名字") + filler(2_500, 400) + info("新名字") + filler(22_000, 400));
+	assert.equal(await findSessionName(file, 999_999_999), "新名字");
+});
+
+test("回归:唯一一条名字在两个窗口之外时也要找到(不是 undefined)", async () => {
+	const file = tempFile(filler(2_500, 400) + info("只有一次改名") + filler(22_000, 400));
+	assert.equal(await findSessionName(file, 999_999_999), "只有一次改名");
+});
+
+test("回归:改名(追加一条 session_info)后,扫描走增量也能拿到新名字", async () => {
+	// 用户实际场景:会话跑着的时候改名 —— 文件追加一行 session_info,
+	// 第二次扫描必须走"只看新增字节"的增量路径并更新名字
+	const file = tempFile(info("旧名字") + filler(2_000, 400));
+	const first = await cachedScan(file, () => parsePiSession(file));
+	assert.equal(first?.name, "旧名字");
+
+	appendFileSync(file, info("新名字"), "utf8");
+	const second = await cachedScan(file, () => parsePiSession(file));
+	assert.equal(second?.name, "新名字");
+	assert.equal(second?.topic, "新名字", "topic 也要跟着更新");
 });

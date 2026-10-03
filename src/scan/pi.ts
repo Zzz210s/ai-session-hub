@@ -44,21 +44,24 @@ function lastSessionInfoName(lines: string[], fallback?: string): string | undef
 }
 
 /**
- * 找出会话名(session_info 的最后一条)。三层策略,最坏也只读"文件头 + 尾部若干块":
- *   1. 文件比上次看到的更长 → 只看新增的那段(追加写,新名字只可能在这里)—— 常态路径,几毫秒
- *   2. 尾部 8MB 往前找(名字通常在最近改过的地方)
- *   3. 文件头 256KB(名字常常在会话开头就写好)
- * 不做全文流式扫描:一个 197MB 的会话文件,全文扫描要 10 秒以上,而它只值一个显示名。
+ * 找出会话名(session_info 的最后一条)。两条路,都保证“最后一条为准”:
+ *   1. 有上次记录且文件没变小 → 只看上次之后的字节(追加写,新名字只可能在这里)—— 常态路径,几毫秒
+ *   2. 否则(缓存里没这个文件)→ 从尾部往前块读,**不设窗口上限**,直到找到为止
+ *
+ * 为什么第 1 条用 size >= 而不是 size >:会话文件 mtime 会因为各种原因变(别的会话在写、
+ * 杀软触碰),指纹失效就会重解析;此时若要求“必须变大”才走增量,就会退化成全文逆向扫描 ——
+ * 实测两个活跃会话(6MB/29MB)因此各花 8s/5s。会话文件是追加写的,size 不变就没有新名字。
+ *
+ * 早先的版本在路径 2 里只读尾部 8MB、再退回文件头 256KB,于是“离末尾很远”的名字会被漏掉,
+ * 退回头部只能拿到**第一条** —— 改名后一直显示旧名字就是这么来的。
  */
 export async function findSessionName(file: string, size: number, previousName?: string): Promise<string | undefined> {
 	const scannedTo = await previousSizeOf(file);
-	if (scannedTo > 0 && size > scannedTo) {
+	if (scannedTo > 0 && size >= scannedTo) {
+		if (size === scannedTo) return previousName;
 		return lastSessionInfoName(await scanMarkedRange(file, '"session_info"', scannedTo, size), previousName);
 	}
-	const tailName = lastSessionInfoName(await scanMarkedLinesBackwards(file, '"session_info"', 4 * 1024 * 1024, 2), previousName);
-	if (tailName !== previousName) return tailName;
-	const headName = lastSessionInfoName(await scanMarkedRange(file, '"session_info"', 0, Math.min(size, 256 * 1024)), tailName);
-	return headName ?? tailName;
+	return lastSessionInfoName(await scanMarkedLinesBackwards(file, '"session_info"'), previousName);
 }
 
 export async function parsePiSession(file: string): Promise<SessionRecord | null> {

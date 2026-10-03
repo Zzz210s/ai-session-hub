@@ -22,7 +22,16 @@ export interface CacheOptions {
 	path: string;
 	/** 有效期(毫秒);<=0 表示禁用 */
 	ttlMs: number;
+	/** 格式版本;磁盘上的版本不一致就当成未命中(默认当前版本) */
+	version?: number;
 }
+
+/**
+ * 缓存格式版本。改动解析/推导逻辑且旧值不再正确时**必须**递增 ——
+ * 否则旧缓存会继续“命中”,把错误结果留在磁盘上。
+ * v2(2026-10-03):会话名改回“最后一条 session_info 为准”,v1 里存的旧名字不再可信。
+ */
+export const CACHE_FORMAT_VERSION = 2;
 
 /** 从环境变量读取 TTL(默认 8 秒;AIS_CACHE=0 或 TTL=0 关闭) */
 export function ttlFromEnv(name: string, fallbackMs: number, env: NodeJS.ProcessEnv = process.env): number {
@@ -35,16 +44,18 @@ export function ttlFromEnv(name: string, fallbackMs: number, env: NodeJS.Process
 
 export interface CacheEntry<T> {
 	at: number;
+	version?: number;
 	value: T;
 }
 
-/** 读缓存;过期/损坏/缺失返回 undefined */
+/** 读缓存;过期/损坏/缺失/格式版本不符返回 undefined */
 export async function readCache<T>(options: CacheOptions): Promise<T | undefined> {
 	if (options.ttlMs <= 0) return undefined;
 	try {
 		if (!existsSync(options.path)) return undefined;
 		const raw = JSON.parse(await readFile(options.path, "utf8"), reviveDates) as CacheEntry<T>;
 		if (!raw || typeof raw.at !== "number") return undefined;
+		if (raw.version !== (options.version ?? CACHE_FORMAT_VERSION)) return undefined;
 		if (Date.now() - raw.at > options.ttlMs) return undefined;
 		return raw.value;
 	} catch {
@@ -58,7 +69,8 @@ export async function writeCache<T>(options: CacheOptions, value: T): Promise<vo
 	try {
 		await mkdir(dirname(options.path), { recursive: true });
 		const tmp = `${options.path}.${process.pid}.tmp`;
-		await writeFile(tmp, JSON.stringify({ at: Date.now(), value } satisfies CacheEntry<T>), "utf8");
+		const entry: CacheEntry<T> = { at: Date.now(), version: options.version ?? CACHE_FORMAT_VERSION, value };
+		await writeFile(tmp, JSON.stringify(entry), "utf8");
 		await rename(tmp, options.path);
 	} catch {
 		/* 缓存失败不影响主流程 */
@@ -75,9 +87,8 @@ export function reviveDates(key: string, value: unknown): unknown {
 	return value;
 }
 
-/** 清空整个缓存目录(会话扫描 + 视图 + 探测) */
-export async function clearCache(): Promise<void> {
-	const dir = cacheDir();
+/** 清空整个缓存目录(会话扫描 + 视图 + 探测);dir 仅测试用 */
+export async function clearCache(dir: string = cacheDir()): Promise<void> {
 	let entries: string[] = [];
 	try {
 		entries = await readdir(dir);
@@ -85,7 +96,7 @@ export async function clearCache(): Promise<void> {
 		return;
 	}
 	await Promise.all(
-		entries.map((name) => rm(path.join(dir, name), { force: true, recursive: true }).catch(() => undefined)),
+		entries.map((name) => rm(join(dir, name), { force: true, recursive: true }).catch(() => undefined)),
 	);
 }
 

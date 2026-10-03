@@ -149,7 +149,18 @@ export async function scanMarkedRange(file: string, marker: string, start: numbe
  * 好处:大多数会话文件里 session_info 就在末尾附近,一下就读完,不必全文流式扫描
  * (实测有个 195MB 的活跃会话文件,全文扫描要 13 秒)。
  */
-export async function scanMarkedLinesBackwards(file: string, marker: string, chunkSize = 4 * 1024 * 1024, maxChunks = 2): Promise<string[]> {
+/** 逆向块读时往回多读一点:块边界若把一行 session_info 切开,两边都会看不见它 */
+const BACKWARD_OVERLAP = 64 * 1024;
+
+/**
+ * 从文件尾往前找含标记的行,返回第一个命中块里的所有命中行。
+ *
+ * **不设窗口上限**(maxChunks 默认无限):窗口化查找会漏掉“离文件尾很远”的那条记录,
+ * 调用方只能退回一个近似值 —— 2026-10-03 的“改名后 ais 仍显示旧名字”就是尾部 8MB 窗口
+ * 造成的(216MB 的会话文件里,最后一条 session_info 距末尾约 200MB)。
+ * 分块扫描是顺序读,实测 216MB 全扫 126ms,代价可接受;常态路径其实走增量(只看新增字节)。
+ */
+export async function scanMarkedLinesBackwards(file: string, marker: string, chunkSize = 4 * 1024 * 1024, maxChunks = Number.MAX_SAFE_INTEGER): Promise<string[]> {
 	let size = 0;
 	try {
 		size = (await stat(file)).size;
@@ -159,7 +170,7 @@ export async function scanMarkedLinesBackwards(file: string, marker: string, chu
 	let end = size;
 	for (let chunk = 0; chunk < maxChunks && end > 0; chunk++) {
 		const start = Math.max(0, end - chunkSize);
-		const lines = await scanMarkedRange(file, marker, start, end);
+		const lines = await scanMarkedRange(file, marker, Math.max(0, start - BACKWARD_OVERLAP), end);
 		if (lines.length > 0) return lines;
 		if (start === 0) break;
 		end = start;

@@ -28,7 +28,7 @@ const record = (id) => ({
 function boardCache(sessions, { ageMs = 0, signature = "sig-1" } = {}) {
 	const dir = mkdtempSync(join(tmpdir(), "ais-board-"));
 	const path = join(dir, "views.json");
-	writeFileSync(path, JSON.stringify({ at: Date.now() - ageMs, value: { signature, at: Date.now() - ageMs, sessions } }), "utf8");
+	writeFileSync(path, JSON.stringify({ at: Date.now() - ageMs, version: 2, value: { signature, at: Date.now() - ageMs, sessions } }), "utf8");
 	return path;
 }
 
