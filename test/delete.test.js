@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -110,4 +110,39 @@ test("deleteSession:系统回收站不可用时退回内部回收目录(并说�
 	assert.equal(await readFile(join(trash, moved[0]), "utf8"), '{"type":"session"}\n', "内容未变,可恢复");
 	const remaining = await readdir(live);
 	assert.deepEqual(remaining, ["pi-111.json"], "无关心跳记录应保留");
+});
+
+test("planDelete:Zed 线程不可删除(改 SQLite 行有损坏风险)", async () => {
+	const plan = await planDelete({ tool: "zed", id: "t1", file: "threads.db", state: "stored" });
+	assert.equal(plan.supported, false);
+	assert.match(plan.reason, /Zed/);
+});
+
+test("planDelete:DSH 会话连同元数据条目一起可删", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "ais-del-"));
+	const sessionDir = join(dir, "sessions", "--C-x--", "s1");
+	mkdirSync(sessionDir, { recursive: true });
+	const metaFile = join(dir, "s1.json");
+	writeFileSync(metaFile, "{}", "utf8");
+	const plan = await planDelete({ tool: "dsh", id: "s1", file: sessionDir, metaFile, state: "stored" }, { liveDirectory: join(dir, "live") });
+	assert.equal(plan.supported, true);
+	assert.deepEqual((plan.paths ?? []).sort(), [metaFile, sessionDir].sort());
+	rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+});
+
+test("deleteSession:DSH 的会话目录与元数据一起移入内部回收目录", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "ais-del-dsh-"));
+	const sessionDir = join(dir, "sessions", "--C-x--", "s1");
+	mkdirSync(sessionDir, { recursive: true });
+	writeFileSync(join(sessionDir, "session.v4.jsonl.zstd"), "body", "utf8");
+	const metaFile = join(dir, "s1.json");
+	writeFileSync(metaFile, "{}", "utf8");
+	const trash = join(dir, "trash");
+	const result = await deleteSession({ tool: "dsh", id: "s1", file: sessionDir, metaFile, state: "stored" }, { trashDir: trash, allowSystemRecycle: false });
+	assert.equal(result.ok, true);
+	assert.match(result.detail, /2 项已移入回收目录/, "detail 应说明删了几项");
+	assert.equal(existsSync(sessionDir), false, "会话目录应已移走");
+	assert.equal(existsSync(metaFile), false, "元数据条目应已移走");
+	assert.equal((await readdir(trash)).length, 2, "两项都应落在回收目录");
+	rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
