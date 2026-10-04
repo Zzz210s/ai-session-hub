@@ -22,6 +22,7 @@ export const TOOL_COLORS: Record<string, number> = {
 	opencode: 216,
 	codex: 35,
 	zed: 69,
+	dsh: 63,
 	gemini: 33,
 };
 

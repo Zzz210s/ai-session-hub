@@ -22,7 +22,7 @@ export interface Args {
 	fast: boolean;
 }
 
-export const TOOLS: Tool[] = ["pi", "claude", "opencode"];
+export const TOOLS: Tool[] = ["pi", "claude", "opencode", "zed", "dsh"];
 
 export function parseArgs(argv: string[]): Args {
 	const args: Args = { command: "", query: "", json: false, limit: 40, noLive: false, liveOnly: false, yes: false, noCache: false, noUpdate: false, fast: false };

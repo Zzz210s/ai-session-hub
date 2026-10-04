@@ -2,7 +2,27 @@
  * 数据模型:会话记录、活体信息、合并后的视图
  */
 
-export type Tool = "pi" | "claude" | "opencode";
+export type Tool = "pi" | "claude" | "opencode" | "zed" | "dsh";
+
+/** 会话形态:cli = 终端 CLI(可接管终端);gui = 图形应用(只能聚焦窗口) */
+export type SessionKind = "cli" | "gui";
+
+const GUI_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["zed", "dsh"]);
+
+/** 由工具推断会话形态(纯函数) */
+export function kindOf(tool: Tool): SessionKind {
+	return GUI_TOOLS.has(tool) ? "gui" : "cli";
+}
+
+/** 正在运行的 GUI 应用实例(不承载单条会话,与会话进程分开) */
+export interface LiveApp {
+	tool: Tool;
+	pid: number;
+	/** 顶层窗口句柄(Windows;用于聚焦) */
+	hwnd?: string;
+	/** 窗口标题 */
+	title: string;
+}
 
 /** 从会话存储解析出来的一条会话记录 */
 export interface SessionRecord {
@@ -33,6 +53,12 @@ export interface SessionRecord {
 	sizeBytes?: number;
 	/** 父会话(分叉/fork 来源) */
 	parentId?: string;
+	/** 会话已被归档(DSH 的 archivedSessionIds) */
+	archived?: boolean;
+	/** 会话被置顶(DSH 的 pinnedSessionIds) */
+	pinned?: boolean;
+	/** 附带元数据文件(DSH 的 session_projcache 条目;删除时一并移动) */
+	metaFile?: string;
 }
 
 /** 正在运行的 AI CLI 进程 */
@@ -98,4 +124,8 @@ export interface SessionView extends SessionRecord {
 	/** 状态细节(心跳状态或标签字形) */
 	status?: string;
 	attention: boolean;
+	/** 会话形态:决定可用键位(见 tui-actions) */
+	kind: SessionKind;
+	/** 所属 GUI 应用此刻是否在运行(仅 gui 有意义) */
+	appRunning?: boolean;
 }
