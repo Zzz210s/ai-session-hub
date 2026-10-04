@@ -21,7 +21,7 @@
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { appVersionSummary, hasGlobalDshCli, planDshCliStep, readAppVersions } from "./apps.ts";
+import { appVersionSummary, hasGlobalDshCli, planDshCliStep, readAppVersions, type DshCliStatus } from "./apps.ts";
 import { execRunner, preflight, type Runner, type Step } from "./preflight.ts";
 
 const IS_WINDOWS = process.platform === "win32";
@@ -147,12 +147,15 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Ste
 	return steps; // 独立程序:不拉别人的仓库,也不跑别人的 setup.sh
 }
 
-/** DSH 全局 CLI 的更新步骤(0 或 1 个);npmAvailable 与 runner 可注入以便离线单测 */
-export async function planDshCliSteps(runner: Runner = execRunner, npmAvailable = isInstalled("npm")): Promise<Step[]> {
-	if (!npmAvailable) return [];
-	const shell = resolvePreflightShell();
-	const step = planDshCliStep({ npmAvailable: true, hasGlobalCli: await hasGlobalDshCli({ shell, runner }) });
-	return step ? [step] : [];
+/** DSH 全局 CLI 的规划结果:要执行的步骤 + 摘要用的状态(0 或 1 个);runner/shell 可注入以便离线单测 */
+export async function planDshCliSteps(
+	runner: Runner = execRunner,
+	npmAvailable = isInstalled("npm"),
+	shell: string | undefined = resolvePreflightShell(),
+): Promise<{ steps: Step[]; status: DshCliStatus }> {
+	if (!npmAvailable || !shell) return { steps: [], status: "npm-missing" };
+	const step = planDshCliStep({ npmAvailable: true, hasGlobalCli: await hasGlobalDshCli({ shell, runner }), shell });
+	return step ? { steps: [step], status: "updated" } : { steps: [], status: "not-installed" };
 }
 
 /** 毫秒 → "12.3s" / "820ms" */
@@ -164,9 +167,11 @@ export function formatDuration(ms: number): string {
 export async function startPreflight(options: StartOptions = {}): Promise<string | undefined> {
 	try {
 		if (options.disabled || process.env.AIS_NO_UPDATE === "1") return undefined;
-		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: resolvePreflightShell() });
+		const shell = resolvePreflightShell();
+		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: shell });
 		if (steps.length === 0) return undefined;
-		steps.push(...(await planDshCliSteps()));
+		const dsh = await planDshCliSteps(execRunner, isInstalled("npm"), shell);
+		steps.push(...dsh.steps);
 		const say = options.onProgress ?? ((message: string) => process.stdout.write("[ais] " + message + "\n"));
 		say("执行 " + steps.length + " 项更新…");
 		const result = await preflight({
@@ -176,8 +181,8 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 				say(ok ? `${label} 完成(${formatDuration(ms)})` : `${label} 失败(${formatDuration(ms)})${detail ? ": " + detail : ""}`),
 		});
 		const failed = result.steps.filter((step) => !step.ok);
-		const versions = await readAppVersions({ shell: resolvePreflightShell() });
-		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions);
+		const versions = await readAppVersions({ shell });
+		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions, dsh.status);
 	} catch (error) {
 		return "[ais] 自更新跳过(" + (error instanceof Error ? error.message : String(error)) + ")";
 	}

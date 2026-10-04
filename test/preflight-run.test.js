@@ -89,19 +89,27 @@ test("planUpdateSteps:类 Unix 上用 $SHELL 执行,步骤与 Windows 一致", (
 	assert.match(steps[0].args[1], /"\/usr\/local\/bin\/pi" update/);
 });
 
-test("DSH CLI 步骤:查不到全局 CLI 就不排,查到才排进 npm 组", async () => {
-	const miss = async () => ({ ok: true, out: "C:/x\n└── (empty)\n" });
-	assert.deepEqual(await planDshCliSteps(miss, true), [], "npm 里没有 DSH 就不排步骤");
-	assert.deepEqual(await planDshCliSteps(async () => ({ ok: true, out: "@deepseek-ai/dsh@0.2.0" }), false), [], "没装 npm 就不排步骤");
+test("DSH CLI 步骤:查不到全局 CLI 就不排,查到才经 shell 排进 npm 组", async () => {
+	const missing = await planDshCliSteps(async () => ({ ok: false, out: "npm error\n@deepseek-ai/dsh\n" }), true, BASH);
+	assert.deepEqual(missing.steps, [], "退出码非 0(未安装)就不排,即使输出里回显了包名");
+	assert.equal(missing.status, "not-installed");
+	const noNpm = await planDshCliSteps(async () => ({ ok: true, out: "" }), false, BASH);
+	assert.deepEqual(noNpm.steps, [], "没装 npm 就不排步骤");
+	assert.equal(noNpm.status, "npm-missing");
+
 	let calls = 0;
 	const hit = async () => {
 		calls += 1;
 		return { ok: true, out: "C:/x\n└── @deepseek-ai/dsh@0.2.0\n" };
 	};
-	const steps = await planDshCliSteps(hit, true);
+	const plan = await planDshCliSteps(hit, true, BASH);
 	assert.equal(calls, 1, "必须经注入的 runner 探测(测试不真的跑 npm)");
-	assert.equal(steps.length, 1);
-	assert.equal(steps[0].label, "更新 DSH CLI");
-	assert.equal(steps[0].group, "npm");
-	assert.deepEqual(steps[0].args.slice(0, 3), ["i", "-g", "@deepseek-ai/dsh@latest"]);
+	assert.equal(plan.status, "updated");
+	assert.equal(plan.steps.length, 1);
+	const step = plan.steps[0];
+	assert.equal(step.label, "更新 DSH CLI");
+	assert.equal(step.group, "npm");
+	assert.notEqual(step.command, "npm", "必须经 shell:Windows 上裸 npm 会 ENOENT");
+	assert.equal(step.command, BASH);
+	assert.match(step.args[1], /\|\| true$/, "尽力而为:失败不拦启动");
 });
