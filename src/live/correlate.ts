@@ -7,7 +7,8 @@
  *   3) 进程启动时间与会话创建时间接近(±90s)兜底
  */
 
-import type { ConsoleWindow, Heartbeat, LiveProcess, SessionRecord, SessionView, TerminalTab } from "../model.ts";
+import type { ConsoleWindow, Heartbeat, LiveApp, LiveProcess, SessionRecord, SessionView, TerminalTab } from "../model.ts";
+import { kindOf } from "../model.ts";
 
 export interface CorrelateInput {
 	sessions: SessionRecord[];
@@ -16,6 +17,8 @@ export interface CorrelateInput {
 	/** 非 Windows Terminal 的控制台窗口(按 pid 对应) */
 	consoleWindows?: ConsoleWindow[];
 	heartbeats: Heartbeat[];
+	/** GUI 应用的运行实例(zed/dsh);与会话进程分开 */
+	apps?: LiveApp[];
 	/** 进程启动时间与会话创建时间的容差(毫秒) */
 	timeToleranceMs?: number;
 }
@@ -102,7 +105,7 @@ export function correlate(input: CorrelateInput): SessionView[] {
 	const tabKey = (tab: TerminalTab) => `${tab.windowPid}:${tab.index}`;
 
 	const views: SessionView[] = input.sessions.map((session) => {
-		const view: SessionView = { ...session, state: "stored", attention: false };
+		const view: SessionView = { ...session, state: "stored", attention: false, kind: kindOf(session.tool) };
 
 		// 1) 心跳精确匹配(按 id,或按会话文件路径)
 		const hb =
@@ -164,6 +167,9 @@ export function correlate(input: CorrelateInput): SessionView[] {
 
 		return view;
 	});
+
+	const appTools = new Set((input.apps ?? []).map((app) => app.tool));
+	for (const view of views) view.appRunning = appTools.has(view.tool);
 
 	return views.sort((a, b) => {
 		const rank = (v: SessionView) => (v.state === "running" ? 0 : 1);

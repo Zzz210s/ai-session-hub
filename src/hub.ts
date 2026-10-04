@@ -7,7 +7,7 @@
  * CLI(`ais list` / `ais doctor`)不带 staleSessions:每次真扫真探。
  */
 
-import type { SessionRecord, SessionView, Tool } from "./model.ts";
+import type { LiveApp, SessionRecord, SessionView, Tool } from "./model.ts";
 import { boardCachePath, readBoardCache, shouldRescan, writeBoardCache, BOARD_CACHE_STALE_MS, BOARD_MAX_AGE_MS } from "./views-cache.ts";
 import { scanAllSessions, type ScanRoots } from "./scan/index.ts";
 import { sessionSignature } from "./scan/signature.ts";
@@ -75,12 +75,15 @@ async function viewsWithLive(options: LoadOptions, sessions: SessionRecord[]): P
 				neverBlock: options.neverBlockLive,
 			});
 	const [live, heartbeats] = await Promise.all([livePromise, readHeartbeats()]);
+	// apps 由任务 7 的探测侧填充;此处前向兼容读,缺失时 correlate 按空集处理
+	const apps = (live as LiveSnapshot & { apps?: LiveApp[] }).apps;
 	const views = correlate({
 		sessions,
 		processes: live.processes,
 		tabs: live.tabs,
 		consoleWindows: live.consoleWindows,
 		heartbeats,
+		apps,
 	});
 	return { views, live, heartbeatCount: heartbeats.length };
 }

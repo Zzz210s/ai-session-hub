@@ -37,8 +37,10 @@ export function rowLine(view: SessionView, selected: boolean, leftWidth: number,
 	const glyph = statusGlyph(view);
 	const tool = view.tool.padEnd(9); // 最长工具名(opencode)后留一个空格
 	const name = sanitizeForDisplay(title(view));
+	// GUI 会话(zed/dsh)在工具名后标出形态与是否在跑;CLI 会话不占宽度
+	const badge = view.kind === "gui" ? `${view.appRunning ? "[GUI app]" : "[GUI]"} ` : "";
 	// 总览里只放"工具 + 会话名";目录/年龄/标签等一律放到右侧详情
-	const body = fit(`${glyph} ${tool}${name}`, leftWidth - 1);
+	const body = fit(`${glyph} ${tool}${badge}${name}`, leftWidth - 1);
 	if (selected) {
 		// 选中行整行反显;行内不能插 RESET,否则反显被打断(表现为"看不到光标")
 		return `${REVERSE} ${body}${RESET}`;

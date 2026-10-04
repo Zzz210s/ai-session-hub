@@ -13,7 +13,7 @@ import { canRecycleToSystem } from "./recycle.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
 import { describeToolColors } from "./theme.ts";
 import type { LiveSnapshot } from "./live/windows.ts";
-import type { SessionView } from "./model.ts";
+import type { LiveApp, SessionView } from "./model.ts";
 
 export interface DoctorInput {
 	views: SessionView[];
@@ -30,6 +30,9 @@ export async function printDoctor({ views, live, heartbeatCount }: DoctorInput):
 	console.log(`活体进程: ${live.processes.length}(${live.processes.map((p) => `${p.tool}#${p.pid}`).join(", ") || "-"})`);
 	console.log(`终端标签: ${live.tabs.length}`);
 	for (const tab of live.tabs) console.log(`  [${tab.index}]${tab.selected ? "*" : " "} ${tab.title}`);
+	// apps 由任务 7 的探测侧填充;缺失时显示 -
+	const apps = (live as LiveSnapshot & { apps?: LiveApp[] }).apps ?? [];
+	console.log(`GUI 应用窗口: ${apps.map((app) => `${app.tool}#${app.pid}`).join(", ") || "-"}`);
 	const registry = await countHeartbeats();
 	console.log(`心跳记录: ${heartbeatCount} 条有效 / 目录共 ${registry} 个文件${registry > heartbeatCount ? `(可清理 ${registry - heartbeatCount} 条:ais gc --yes)` : ""}`);
 	console.log(`工具配色(256 色): ${describeToolColors()}(可用 NO_COLOR / AIS_COLOR=0 关闭)`);

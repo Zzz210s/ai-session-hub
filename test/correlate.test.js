@@ -126,3 +126,23 @@ test("correlate:控制台窗口 pid 与会话进程不一致时不误匹配", ()
 	});
 	assert.equal(views[0].live?.console, undefined);
 });
+
+test("correlate:GUI 工具标记 kind=gui 且带 appRunning", () => {
+	const views = correlate({
+		sessions: [
+			{ tool: "zed", id: "t1", file: "db", cwd: "C:/x", topic: "线程", firstMessage: "", createdAt: new Date(0), updatedAt: new Date(0) },
+			{ tool: "pi", id: "p1", file: "f", cwd: "C:/x", topic: "会话", firstMessage: "", createdAt: new Date(0), updatedAt: new Date(0) },
+		],
+		processes: [],
+		tabs: [],
+		consoleWindows: [],
+		heartbeats: [],
+		apps: [{ tool: "zed", pid: 42, hwnd: "0x1", title: "proj - Zed" }],
+	});
+	const zed = views.find((v) => v.tool === "zed");
+	const pi = views.find((v) => v.tool === "pi");
+	assert.equal(zed.kind, "gui");
+	assert.equal(zed.appRunning, true);
+	assert.equal(pi.kind, "cli");
+	assert.equal(pi.appRunning, false);
+});
