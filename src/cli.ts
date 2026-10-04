@@ -126,7 +126,7 @@ async function main(): Promise<void> {
 		}
 		if (!args.yes) {
 			console.log(`将删除「${title(target)}」(${target.tool})`);
-			console.log(`  文件: ${plan.path}`);
+			for (const item of plan.paths ?? (plan.path ? [plan.path] : [])) console.log(`  文件: ${item}`);
 			console.log(`  去向: ${trashDir()}(可恢复)`);
 			console.log("确认后请加 --yes 重新执行");
 			return;

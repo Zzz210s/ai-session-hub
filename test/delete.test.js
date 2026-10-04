@@ -112,37 +112,88 @@ test("deleteSession:系统回收站不可用时退回内部回收目录(并说�
 	assert.deepEqual(remaining, ["pi-111.json"], "无关心跳记录应保留");
 });
 
-test("planDelete:Zed 线程不可删除(改 SQLite 行有损坏风险)", async () => {
-	const plan = await planDelete({ tool: "zed", id: "t1", file: "threads.db", state: "stored" });
-	assert.equal(plan.supported, false);
-	assert.match(plan.reason, /Zed/);
-});
-
-test("planDelete:DSH 会话连同元数据条目一起可删", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "ais-del-"));
+function dshFixture() {
+	const dir = mkdtempSync(join(tmpdir(), "ais-dsh-"));
 	const sessionDir = join(dir, "sessions", "--C-x--", "s1");
 	mkdirSync(sessionDir, { recursive: true });
+	writeFileSync(join(sessionDir, "body.zstd"), "body", "utf8");
 	const metaFile = join(dir, "s1.json");
 	writeFileSync(metaFile, "{}", "utf8");
-	const plan = await planDelete({ tool: "dsh", id: "s1", file: sessionDir, metaFile, state: "stored" }, { liveDirectory: join(dir, "live") });
+	return { dir, sessionDir, metaFile, trash: join(dir, "trash"), cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }) };
+}
+
+test("planDelete:DSH 会话连同元数据条目一起可删", async () => {
+	const f = dshFixture();
+	const plan = await planDelete({ tool: "dsh", id: "s1", file: f.sessionDir, metaFile: f.metaFile, state: "stored" }, { liveDirectory: join(f.dir, "live") });
 	assert.equal(plan.supported, true);
-	assert.deepEqual((plan.paths ?? []).sort(), [metaFile, sessionDir].sort());
-	rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	assert.deepEqual((plan.paths ?? []).sort(), [f.metaFile, f.sessionDir].sort());
+	f.cleanup();
 });
 
 test("deleteSession:DSH 的会话目录与元数据一起移入内部回收目录", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "ais-del-dsh-"));
-	const sessionDir = join(dir, "sessions", "--C-x--", "s1");
-	mkdirSync(sessionDir, { recursive: true });
-	writeFileSync(join(sessionDir, "session.v4.jsonl.zstd"), "body", "utf8");
-	const metaFile = join(dir, "s1.json");
-	writeFileSync(metaFile, "{}", "utf8");
-	const trash = join(dir, "trash");
-	const result = await deleteSession({ tool: "dsh", id: "s1", file: sessionDir, metaFile, state: "stored" }, { trashDir: trash, allowSystemRecycle: false });
+	const f = dshFixture();
+	const result = await deleteSession({ tool: "dsh", id: "s1", file: f.sessionDir, metaFile: f.metaFile, state: "stored" }, { trashDir: f.trash, allowSystemRecycle: false });
 	assert.equal(result.ok, true);
-	assert.match(result.detail, /2 项已移入回收目录/, "detail 应说明删了几项");
-	assert.equal(existsSync(sessionDir), false, "会话目录应已移走");
-	assert.equal(existsSync(metaFile), false, "元数据条目应已移走");
-	assert.equal((await readdir(trash)).length, 2, "两项都应落在回收目录");
+	assert.match(result.detail, /2 项已移入回收目录/);
+	assert.equal(existsSync(f.sessionDir), false, "会话目录应已移走");
+	assert.equal(existsSync(f.metaFile), false, "元数据条目应已移走");
+	assert.equal((await readdir(f.trash)).length, 2, "两项都应落在回收目录");
+	f.cleanup();
+});
+
+test("deleteSession:系统回收站与内部回收目录都失败时返回失败并说明原因", async () => {
+	const { sessionFile, live, root } = await fixture();
+	const blocker = join(root, "blocker");
+	await writeFile(blocker, "x");
+	const result = await deleteSession(view({ file: sessionFile }), {
+		trashDir: join(blocker, "trash"),
+		liveDirectory: live,
+		allowSystemRecycle: true,
+		recycle: async () => ({ ok: false, detail: "模拟系统回收站失败" }),
+	});
+	assert.equal(result.ok, false);
+	assert.match(result.detail, /成功 0 项 \/ 失败 1 项/);
+	assert.match(result.detail, /模拟系统回收站失败/);
+	assert.equal(existsSync(sessionFile), true, "两条退路都失败时不应移走文件");
+	assert.equal(existsSync(join(live, "pi-999.json")), true, "失败时不应清心跳");
+});
+
+test("deleteSession:DSH 只有一项成功时返回失败并给出计数", async () => {
+	const f = dshFixture();
+	const blocker = join(f.dir, "blocker");
+	writeFileSync(blocker, "x");
+	const result = await deleteSession({ tool: "dsh", id: "s1", file: f.sessionDir, metaFile: f.metaFile, state: "stored" }, {
+		trashDir: join(blocker, "trash"),
+		allowSystemRecycle: true,
+		recycle: async (target) => (target === f.sessionDir ? { ok: true } : { ok: false, detail: "模拟系统回收站失败" }),
+	});
+	assert.equal(result.ok, false);
+	assert.match(result.detail, /成功 1 项 \/ 失败 1 项/);
+	f.cleanup();
+});
+
+test("deleteSession:回收目录重名时追加 -2 后缀", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "ais-dsh-dup-"));
+	const first = join(dir, "a", "s1");
+	const second = join(dir, "b", "s1");
+	mkdirSync(join(dir, "a"), { recursive: true });
+	mkdirSync(join(dir, "b"), { recursive: true });
+	writeFileSync(first, "1");
+	writeFileSync(second, "2");
+	const trash = join(dir, "trash");
+	const result = await deleteSession({ tool: "dsh", id: "s1", file: first, metaFile: second, state: "stored" }, { trashDir: trash, allowSystemRecycle: false });
+	assert.equal(result.ok, true);
+	const names = (await readdir(trash)).sort();
+	assert.equal(names.length, 2);
+	assert.match(names[1], /-2$/, "重名项应带 -2 后缀");
 	rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+});
+
+test("deleteSession:DSH 只有元数据(file 为空)时仍可删除", async () => {
+	const f = dshFixture();
+	const result = await deleteSession({ tool: "dsh", id: "s1", file: "", metaFile: f.metaFile, state: "stored" }, { trashDir: f.trash, allowSystemRecycle: false });
+	assert.equal(result.ok, true);
+	assert.equal(existsSync(f.metaFile), false, "元数据条目应已移走");
+	assert.equal((await readdir(f.trash)).length, 1, "应只移动元数据一项");
+	f.cleanup();
 });

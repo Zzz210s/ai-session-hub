@@ -49,6 +49,25 @@ export interface DeleteOptions {
 	allowSystemRecycle?: boolean;
 }
 
+/** 组装多路径删除计划(DSH 与普通会话共用:模式判定 + 心跳收集) */
+async function planForPaths(view: SessionView, paths: string[], options: DeleteOptions): Promise<DeletePlan> {
+	return {
+		supported: true,
+		mode: (options.allowSystemRecycle ?? canRecycleToSystem()) ? "recycle" : "trash",
+		paths,
+		path: paths[0],
+		heartbeatFiles: await heartbeatFilesFor(view, options.liveDirectory ?? liveDir()),
+	};
+}
+
+/** 把移动失败原因说清楚(跨盘 rename 会返回裸 EXDEV) */
+function describeMoveError(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	const code = (error as NodeJS.ErrnoException | undefined)?.code;
+	if (code === "EXDEV" || /EXDEV/.test(message)) return `跨盘移动失败(回收目录与源文件不在同一磁盘):${message}`;
+	return message;
+}
+
 /** 找出该会话残留的心跳记录(按 sessionId 匹配) */
 async function heartbeatFilesFor(view: SessionView, dir = liveDir()): Promise<string[]> {
 	if (!existsSync(dir)) return [];
@@ -89,24 +108,12 @@ export async function planDelete(view: SessionView, options: DeleteOptions = {})
 		// 会话目录与 session_projcache 元数据要一起移走,否则应用里会留悬挂条目(设计 §3.4)
 		const paths = [view.file, view.metaFile].filter((item): item is string => Boolean(item) && existsSync(item));
 		if (paths.length === 0) return { supported: false, reason: "会话目录与元数据都不存在,无需删除" };
-		return {
-			supported: true,
-			mode: (options.allowSystemRecycle ?? canRecycleToSystem()) ? "recycle" : "trash",
-			paths,
-			path: paths[0],
-			heartbeatFiles: await heartbeatFilesFor(view, options.liveDirectory ?? liveDir()),
-		};
+		return planForPaths(view, paths, options);
 	}
 	if (!view.file || !existsSync(view.file)) {
 		return { supported: false, reason: `会话文件不存在: ${view.file || "(空)"}` };
 	}
-	return {
-		supported: true,
-		mode: (options.allowSystemRecycle ?? canRecycleToSystem()) ? "recycle" : "trash",
-		path: view.file,
-		paths: [view.file],
-		heartbeatFiles: await heartbeatFilesFor(view, options.liveDirectory ?? liveDir()),
-	};
+	return planForPaths(view, [view.file], options);
 }
 
 export interface DeleteResult {
@@ -119,7 +126,8 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 	const plan = await planDelete(view, options);
 	if (!plan.supported) return { ok: false, detail: plan.reason ?? "不可删除" };
 	const paths = plan.paths ?? (plan.path ? [plan.path] : []);
-	if (paths.length === 0) return { ok: false, detail: plan.reason ?? "不可删除" };
+	// 兜底:计划理应有路径,空计划说明规划逻辑有 bug,不能当成成功
+	if (paths.length === 0) return { ok: false, detail: "删除计划里没有可移动的路径" };
 
 	// 逐个处理:优先送系统回收站(Windows:资源管理器;Linux:freedesktop 回收站)
 	const useSystem = options.allowSystemRecycle ?? canRecycleToSystem();
@@ -128,9 +136,10 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	let recycled = 0;
 	let moved = 0;
-	const failed: string[] = [];
+	const failed: { name: string; reason: string }[] = [];
 	let fallbackNote = "";
 	for (const source of paths) {
+		const name = basename(source);
 		if (useSystem) {
 			const result = await recycle(source);
 			if (result.ok) {
@@ -139,28 +148,33 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 			}
 			fallbackNote = `(系统回收站不可用:${result.detail ?? "未知原因"})`;
 		}
-		// 退路:移入内部回收目录(同样可恢复)
-		await mkdir(dir, { recursive: true });
-		let target = join(dir, `${stamp}__${view.tool}__${basename(source)}`);
-		let n = 2;
-		while (existsSync(target)) target = join(dir, `${stamp}__${view.tool}__${basename(source)}-${n++}`);
+		// 退路:移入内部回收目录(同样可恢复);mkdir 也放进 try,失败不能变成 unhandled rejection
 		try {
+			await mkdir(dir, { recursive: true });
+			let target = join(dir, `${stamp}__${view.tool}__${name}`);
+			let n = 2;
+			while (existsSync(target)) target = join(dir, `${stamp}__${view.tool}__${name}-${n++}`);
 			await rename(source, target);
 			moved++;
 		} catch (error) {
-			failed.push(`${basename(source)}: ${error instanceof Error ? error.message : String(error)}`);
+			failed.push({ name, reason: describeMoveError(error) });
 		}
 	}
 
 	const done = recycled + moved;
-	if (done === 0) return { ok: false, detail: `移入回收目录失败: ${failed.join("; ") || "原因未知"}` };
-
 	const parts: string[] = [];
 	if (recycled > 0) {
 		parts.push(`${recycled} 项已放入${process.platform === "win32" ? "系统回收站(可在资源管理器还原)" : "回收站(可在文件管理器还原)"}`);
 	}
 	if (moved > 0) parts.push(`${moved} 项已移入回收目录 ${dir}${fallbackNote}`);
-	if (failed.length > 0) parts.push(`${failed.length} 项失败(${failed.join("; ")})`);
+	if (failed.length > 0) parts.push(`${failed.length} 项失败(${failed.map((item) => `${item.name}: ${item.reason}`).join("; ")})`);
+
+	// 只有全部路径都移走才算成功;部分成功会让应用留悬挂条目(设计 §3.4)
+	if (done < paths.length) {
+		// moved>0 时 fallbackNote 已随“已移入回收目录”展示;这里只在未展示时补上
+		const note = fallbackNote && moved === 0 ? ` ${fallbackNote}` : "";
+		return { ok: false, detail: `已删除「${title(view)}」失败:成功 ${done} 项 / 失败 ${failed.length} 项${parts.length > 0 ? `(${parts.join(";")})` : ""}${note}` };
+	}
 
 	let cleaned = 0;
 	for (const file of plan.heartbeatFiles ?? []) {
