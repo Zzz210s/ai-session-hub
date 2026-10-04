@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { loadViews } from "../src/hub.ts";
+import { BOARD_MAX_AGE_MS } from "../src/views-cache.ts";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -61,7 +62,8 @@ test("列表没变:直接用缓存,一次扫描都不做", async () => {
 	const result = await loadViews({ ...options, viewsCachePath: path });
 	assert.equal(calls.scans, 0, "指纹没变不该重扫");
 	assert.deepEqual(result.views.map((v) => v.id), ["a"]);
-	assert.equal(Date.now() - started < 500, true, "不该等待扫描");
+	// 只做"没有阻塞等待"的冒烟检查:并发跑多个测试文件时机器会很忙,阈值放宽
+	assert.equal(Date.now() - started < 2000, true, "不该等待扫描");
 });
 
 test("结构指纹变了:先给缓存,再后台重扫回写", async () => {
@@ -73,13 +75,13 @@ test("结构指纹变了:先给缓存,再后台重扫回写", async () => {
 	assert.ok(await waitFor(() => cachedSessions(path).length === 2), "后台重扫应回写缓存");
 });
 
-test("超过最长陈旧时间(60 秒)也重扫,即使指纹没变", async () => {
+test("超过最长陈旧时间也重扫,即使指纹没变", async () => {
 	const path = boardCache([record("old")]);
 	const { calls, options } = harness({ scanResult: () => [record("new")] });
 	await loadViews({ ...options, viewsCachePath: path, signature: () => "sig-1" });
 	assert.equal(calls.scans, 0, "新鲜缓存不重扫");
 
-	const oldPath = boardCache([record("ancient")], { ageMs: 61_000 });
+	const oldPath = boardCache([record("ancient")], { ageMs: BOARD_MAX_AGE_MS + 1_000 });
 	const old = harness({ scanResult: () => [record("current")] });
 	const result = await loadViews({ ...old.options, viewsCachePath: oldPath });
 	assert.deepEqual(result.views.map((v) => v.id), ["ancient"], "先渲染旧的");
