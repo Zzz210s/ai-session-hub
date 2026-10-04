@@ -9,8 +9,9 @@
 
 import type { SessionRecord, SessionView, Tool } from "./model.ts";
 import { boardCachePath, readBoardCache, shouldRescan, writeBoardCache, BOARD_CACHE_STALE_MS, BOARD_MAX_AGE_MS } from "./views-cache.ts";
-import { scanAllSessions } from "./scan/index.ts";
+import { scanAllSessions, type ScanRoots } from "./scan/index.ts";
 import { sessionSignature } from "./scan/signature.ts";
+import { scanInBackground } from "./scan/background.ts";
 import { readHeartbeats } from "./live/heartbeat.ts";
 import { probeLive } from "./live/probe.ts";
 import { correlate } from "./live/correlate.ts";
@@ -36,6 +37,8 @@ export interface LoadOptions {
 	viewsCachePath?: string;
 	scan?: (options: { tools?: Tool[] }) => Promise<SessionRecord[]>;
 	signature?: () => string;
+	/** 扫描根目录覆盖(测试用) */
+	roots?: ScanRoots;
 }
 
 export interface LoadResult {
@@ -80,11 +83,20 @@ async function viewsWithLive(options: LoadOptions, sessions: SessionRecord[]): P
 	return { views, live, heartbeatCount: heartbeats.length };
 }
 
-/** 后台重扫并回写缓存(同一时刻只跑一个,失败静默) */
+/**
+ * 后台重扫并回写缓存(同一时刻只跑一个,失败静默)。
+ *
+ * 默认跑在 **worker 线程**里:本机实测冷读大会话文件时一次扫描可达数分钟,
+ * 跑在主线程会把 TUI 卡死。注入了 options.scan(测试)时留在进程内执行。
+ */
 function refreshSessions(options: LoadOptions, path: string): void {
 	if (refreshing) return;
-	refreshing = scanOf(options)
-		.then((sessions) => writeBoardCache(path, { signature: signatureOf(options), at: Date.now(), sessions }))
+	const write = (sessions: SessionRecord[] | undefined): void => {
+		if (!sessions) return;
+		void writeBoardCache(path, { signature: signatureOf(options), at: Date.now(), sessions });
+	};
+	refreshing = (options.scan ? scanOf(options) : scanInBackground({ tools: options.tools, roots: options.roots }))
+		.then(write)
 		.catch(() => undefined)
 		.finally(() => {
 			refreshing = null;

@@ -86,8 +86,8 @@ export async function parseClaudeSession(file: string): Promise<SessionRecord | 
 	};
 }
 
-export async function scanClaudeSessions(): Promise<SessionRecord[]> {
-	const files = await collectFiles(claudeProjectsRoot(), ".jsonl", 2);
+export async function scanClaudeSessions(root: string = claudeProjectsRoot()): Promise<SessionRecord[]> {
+	const files = await collectFiles(root, ".jsonl", 2);
 	const out: SessionRecord[] = [];
 	for (const file of files) {
 		try {

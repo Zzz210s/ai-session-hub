@@ -136,8 +136,8 @@ function extractUserText(content: unknown): string {
 	return "";
 }
 
-export async function scanPiSessions(): Promise<SessionRecord[]> {
-	const files = await collectFiles(piSessionsRoot(), ".jsonl", 2);
+export async function scanPiSessions(root: string = piSessionsRoot()): Promise<SessionRecord[]> {
+	const files = await collectFiles(root, ".jsonl", 2);
 	const out: SessionRecord[] = [];
 	for (const file of files) {
 		try {

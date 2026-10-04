@@ -31,8 +31,7 @@ function toDate(value: number | string | null | undefined): Date | null {
 	return new Date(num > 1e12 ? num : num * 1000);
 }
 
-export async function scanOpenCodeSessions(): Promise<SessionRecord[]> {
-	const dbPath = opencodeDbPath();
+export async function scanOpenCodeSessions(dbPath: string = opencodeDbPath()): Promise<SessionRecord[]> {
 	try {
 		const meta = await fileMeta(dbPath);
 		// 动态导入:让 node:sqlite 的实验特性警告在 cli 安装警告过滤器之后再触发

@@ -14,8 +14,14 @@ import { join } from "node:path";
 import type { SessionRecord } from "./model.ts";
 import { cacheDir, readCache, writeCache } from "./cache.ts";
 
-/** 即使指纹没变,也至少这么久重扫一次(兜底:会话文件里的话题/时间在变) */
-export const BOARD_MAX_AGE_MS = 60_000;
+/**
+ * 即使指纹没变,也至少这么久重扫一次(兜底:会话文件里的话题/时间在变)。
+ *
+ * 取 20 秒的原因:改会话名只改文件内容、不改目录 mtime,所以指纹察觉不到 —— 重扫是唯一
+ * 能让板面跟上改名的机制。重扫跑在 worker 线程里(见 scan/background.ts),不阻塞界面,
+ * 所以可以把间隔压得比 60 秒短得多。
+ */
+export const BOARD_MAX_AGE_MS = 20_000;
 /** 缓存可用窗口(超过就完全重扫,视为没有缓存) */
 export const BOARD_CACHE_STALE_MS = 10 * 60_000;
 

@@ -7,20 +7,28 @@ import { scanClaudeSessions } from "./claude.ts";
 import { scanOpenCodeSessions } from "./opencode.ts";
 import { scanPiSessions } from "./pi.ts";
 
-export interface ScanOptions {
-	tools?: Tool[];
+/** 会话存储位置覆盖(测试与扫描 worker 用;不传就用各家的默认位置) */
+export interface ScanRoots {
+	pi?: string;
+	claude?: string;
+	opencode?: string;
 }
 
-const SCANNERS: { tool: Tool; scan: () => Promise<SessionRecord[]> }[] = [
-	{ tool: "pi", scan: scanPiSessions },
-	{ tool: "claude", scan: scanClaudeSessions },
-	{ tool: "opencode", scan: scanOpenCodeSessions },
-];
+export interface ScanOptions {
+	tools?: Tool[];
+	roots?: ScanRoots;
+}
 
 export async function scanAllSessions(options: ScanOptions = {}): Promise<SessionRecord[]> {
 	const wanted = options.tools?.length ? new Set(options.tools) : null;
+	const roots = options.roots ?? {};
+	const scanners: { tool: Tool; scan: () => Promise<SessionRecord[]> }[] = [
+		{ tool: "pi", scan: () => scanPiSessions(roots.pi) },
+		{ tool: "claude", scan: () => scanClaudeSessions(roots.claude) },
+		{ tool: "opencode", scan: () => scanOpenCodeSessions(roots.opencode) },
+	];
 	const results = await Promise.all(
-		SCANNERS.filter((entry) => !wanted || wanted.has(entry.tool)).map(async (entry) => {
+		scanners.filter((entry) => !wanted || wanted.has(entry.tool)).map(async (entry) => {
 			try {
 				return await entry.scan();
 			} catch {
