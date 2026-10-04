@@ -114,3 +114,14 @@ test("旧格式缓存(裸视图数组)视为无效,直接扫描后升级为新�
 	assert.equal(calls.scans, 1, "旧格式必须重扫");
 	assert.deepEqual(cachedSessions(path), ["新格式"], "应升级为新格式");
 });
+
+test("首次运行(没有板面缓存)+ neverBlockSessions:立刻给空板并触发后台扫描", async () => {
+	const path = join(mkdtempSync(join(tmpdir(), "ais-board-")), "views.json");
+	const { calls, options } = harness({ scanResult: () => [record("fresh")] });
+	const started = Date.now();
+	const result = await loadViews({ ...options, viewsCachePath: path, neverBlockSessions: true });
+	assert.deepEqual(result.views, [], "先给空板,不等扫描");
+	assert.equal(Date.now() - started < 2000, true, "不该等冷扫描(可能几分钟)");
+	assert.ok(await waitFor(() => calls.scans === 1), "要触发一次后台重扫");
+	assert.ok(await waitFor(() => readFileSync(path, "utf8").includes("fresh")), "扫完要把缓存写回");
+});

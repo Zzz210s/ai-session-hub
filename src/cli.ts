@@ -173,7 +173,7 @@ async function main(): Promise<void> {
 	if (pre) console.log(pre);
 	await runTui({
 		load: async (options) =>
-			(await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs, staleLive: options?.staleLive, staleSessions: options?.staleSessions, neverBlockLive: options?.neverBlockLive })).views,
+			(await loadViews({ tools: args.tools, liveTtlMs: options?.liveTtlMs, staleLive: options?.staleLive, staleSessions: options?.staleSessions, neverBlockLive: options?.neverBlockLive, neverBlockSessions: options?.neverBlockSessions })).views,
 		filter: args.liveOnly ? "running" : "all",
 	});
 }

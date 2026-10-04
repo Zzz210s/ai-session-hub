@@ -20,11 +20,11 @@ import { fullTitle } from "./format.ts";
 const REFRESH_MS = 3000;
 /** 界面的加载参数:探测与扫描都比刷新间隔慢,所以两者都允许"先渲染旧的、后台刷新" */
 const TUI_LIVE_TTL_MS = 15000;
-const TUI_LOAD = { staleLive: true, staleSessions: true, neverBlockLive: true, liveTtlMs: TUI_LIVE_TTL_MS } as const;
+const TUI_LOAD = { staleLive: true, staleSessions: true, neverBlockLive: true, neverBlockSessions: true, liveTtlMs: TUI_LIVE_TTL_MS } as const;
 const REDRAW_THROTTLE_MS = 80;
 
 export interface TuiOptions {
-	load: (options?: { liveTtlMs?: number; staleLive?: boolean; staleSessions?: boolean; neverBlockLive?: boolean }) => Promise<SessionView[]>;
+	load: (options?: { liveTtlMs?: number; staleLive?: boolean; staleSessions?: boolean; neverBlockLive?: boolean; neverBlockSessions?: boolean }) => Promise<SessionView[]>;
 	filter?: FilterKind;
 	/** 要加载的拓展(默认:环境变量/配置文件/内置默认列表) */
 	extensions?: string[];
@@ -88,7 +88,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		},
 	});
 
-	const reload = async (options?: { staleLive?: boolean; staleSessions?: boolean; neverBlockLive?: boolean; liveTtlMs?: number }): Promise<void> => {
+	const reload = async (options?: { staleLive?: boolean; staleSessions?: boolean; neverBlockLive?: boolean; neverBlockSessions?: boolean; liveTtlMs?: number }): Promise<void> => {
 		try {
 			allRows = await optionsLoader(options);
 		} catch (error) {

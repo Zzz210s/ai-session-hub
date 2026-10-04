@@ -345,7 +345,7 @@ The board refreshes every 3 seconds while the two expensive jobs are the session
 
 | Data | Churn | Strategy | Measured |
 |---|---|---|---|
-| Session list (scan result) | low (only on create/delete/new content) | structural fingerprint (session dir mtimes) + 60 s ceiling; no rescan when unchanged | 1 rescan per 20 refreshes |
+| Session list (scan result) | low (only on create/delete/new content) | structural fingerprint (session dir mtimes) + **20 s** ceiling; no rescan when unchanged, rescans run in a **worker thread** | 1 rescan per 20 refreshes |
 | Heartbeats + probe snapshot (running/working/waiting) | high | read fresh every time (~25 ms); the probe keeps its own 15 s snapshot cache | board state never lags |
 | Per-session-file parse | active sessions keep growing | cached by size+mtime, **incremental**: only the bytes appended since last read | cold 10-24 s -> **~2 s**, warm 0.2 s |
 
@@ -356,6 +356,21 @@ views cache hit rate   55% -> 95% (19 of 20 refreshes served from cache)
 single load            30-70 ms (cold first frame under 0.3 s)
 session scan           cold 1-2 s, warm 0.2 s
 ```
+
+### Rescans never block the UI (worker thread)
+
+The session-list rescan runs in its own thread (`src/scan/worker.ts`): the first read of a 206 MB session file took over ten seconds here and a fully cold scan can run for minutes — on the main thread the UI would simply freeze. The main thread now only consumes results.
+
+```
+main-thread worst pause   minutes -> 120 ms (measured while a worker was scanning)
+first frame               35-128 ms (renders from cache, does not wait for the scan)
+very first run (no cache) 43 ms (empty board) -> all 35 sessions appear 8 s later
+cache write-back          0.3 s (warm) / 7-10 s (active sessions appending)
+```
+
+- One scan at a time; a worker that errors, exits early, or hangs past 10 minutes is dropped (the old cache stays), and the next refresh retries
+- The worker flushes its parse results, so the next scan still hits the fingerprint cache (third run: 0.3 s)
+- Because blocking is gone, the rescan ceiling dropped from 60 s to **20 s** — a rename only changes file content, never the directory mtime, so rescanning is the only way the board can follow it
 
 Session-name lookup: session files are append-only, so **with a cache only the appended bytes are read** (the normal path, a few ms); without one it walks backwards from the end in chunks, **with no window cap**, until the last `session_info` is found (206 MB scanned in 175 ms here).
 

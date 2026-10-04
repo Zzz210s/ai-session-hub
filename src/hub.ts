@@ -33,6 +33,8 @@ export interface LoadOptions {
 	liveStaleMs?: number;
 	/** 连探测缓存都没有时也不等(界面首帧):先渲染,后台探测 */
 	neverBlockLive?: boolean;
+	/** 连板面缓存都没有时也不等(首次运行的界面首帧):先给空板,后台 worker 扫完再刷新 */
+	neverBlockSessions?: boolean;
 	/** 缓存文件路径 / 扫描实现 / 结构指纹(测试用) */
 	viewsCachePath?: string;
 	scan?: (options: { tools?: Tool[] }) => Promise<SessionRecord[]>;
@@ -111,6 +113,12 @@ export async function loadViews(options: LoadOptions = {}): Promise<LoadResult> 
 			// 列表没变就不重扫(实测:按固定 TTL 判定时命中率只有 55%)
 			if (shouldRescan(cached, signatureOf(options))) refreshSessions(options, path);
 			return viewsWithLive(options, cached.sessions);
+		}
+		// 首次运行(还没有板面缓存):界面不该等一次可能是几分钟的冷扫描 —— 先给空板,
+		// worker 扫完写回缓存,下一次刷新(≤3 秒)自然就有了
+		if (options.neverBlockSessions) {
+			refreshSessions(options, path);
+			return viewsWithLive(options, []);
 		}
 	}
 	const sessions = await scanOf(options);
