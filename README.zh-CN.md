@@ -2,7 +2,7 @@
 
 [English](./README.md) | **简体中文**
 
-主机级 **AI 会话总览与跳转**(TUI):一个键盘驱动的全屏看板,把本机上 pi / Claude Code / opencode 的**运行中会话**与**历史会话**汇总起来,分类标注,回车即**聚焦已有终端窗口**,或**就地接管终端继续**该会话。
+主机级 **AI 会话总览与跳转**(TUI):一个键盘驱动的全屏看板,把本机上 pi / Claude Code / opencode 的**运行中会话**与**历史会话**汇总起来,分类标注,回车即**聚焦已有终端窗口**,或**就地接管终端继续**该会话。还把 **Zed** 与 **DeepSeek Harness** 两个 GUI 应用的会话一并列出(只读元数据;它们没有终端可接管)。
 
 ```
  AI 会话总览                          共 42 | 运行中 3 | 需关注 1
@@ -29,7 +29,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| 会话发现 | pi:`~/.pi/agent/sessions/**/*.jsonl` · Claude:`~/.claude/projects/**/*.jsonl` · opencode:`~/.local/share/opencode/opencode.db` |
+| 会话发现 | pi:`~/.pi/agent/sessions/**/*.jsonl` · Claude:`~/.claude/projects/**/*.jsonl` · opencode:`~/.local/share/opencode/opencode.db` · Zed:`%LOCALAPPDATA%\Zed\threads\threads.db`(GUI,只读元数据) · DeepSeek Harness:`$DSH_HOME/storages/session_projcache/sessions/`(GUI,只读元数据) |
 | 活性判定 | 心跳注册表(精确)> 终端标签标题匹配(定位标签)> 进程启动时间与会话创建时间接近(兜底) |
 | 状态标注 | 解析 pi-tab-status 的标签字形:`◐`思考中 / `▸`执行工具 / `_`等待输入 / `?`疑似卡住 / `×`出错 / `·`空闲;需关注的会话标 `!` 并可用 `2` 单独筛选 |
 | 聚焦窗口 | 经 UI Automation 选中对应的 Windows Terminal 标签并把窗口置前(实测可用) |
@@ -93,6 +93,7 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 | 2 | `pi update --extensions` | **严格** |
 | 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **尽力而为**:只给装了的排步骤,失败不拦住启动 |
 
+- **GUI 应用只探测版本**:Zed 与 DeepSeek Harness 是自带更新器的桌面应用,ais 只报告它们的版本、不代管升级;若装了 `@deepseek-ai/dsh` 全局 CLI,才把它作为尽力而为的一步排进更新(摘要里说明跳过还是更新)
 - **不做版本/变更检测**:每次按固定顺序跑一遍(有更新就装,没有就是空转)
 - **独立程序**:只动 CLI 与它们的插件 —— 不 `git pull` 别人的仓库,也不跑别人的 `setup.sh`(由 `test/standalone.test.js` 固化)
 - **跳过**:`ais --no-update` 或 `AIS_NO_UPDATE=1 ais`
@@ -161,6 +162,7 @@ ais --no-update          # 跳过启动前自更新(等价 AIS_NO_UPDATE=1)
 | opencode | `#fab283`(opencode TUI 主题 `primary`) | 216 |
 | codex | `#10a37f`(OpenAI 绿) | 35 |
 | zed | `#5f87ff`(Zed 蓝) | 69 |
+| dsh | `#4d6bfe`(DeepSeek 蓝) | 63 |
 | gemini | `#4285f4`(Google 蓝) | 33 |
 | 其他未知工具 | 中性灰 | 250 |
 
@@ -248,7 +250,7 @@ src/
 ├── fuzzy.ts            模糊匹配与排序(纯)
 ├── format.ts           列表与状态格式化(纯)
 ├── text.ts             显示宽度/补齐/截断/ANSI 处理(纯)
-├── scan/               会话采集:pi / claude / opencode / io(头尾读 + 流式标记扫描)
+├── scan/               会话采集:pi / claude / opencode / zed / dsh / io(头尾读 + 流式标记扫描)
 ├── live/               活体:windows(进程 + WT 标签,经 PowerShell/UIA)· heartbeat · correlate(纯)
 ├── tui-attach.ts       整屏接管流程(交出终端 → 前台运行 → 收回)
 └── actions.ts          聚焦 / 复制命令 / attach 命令构造
@@ -262,7 +264,7 @@ scripts/                windows.ps1(枚举进程与标签)· focus.ps1(选中标
 
 | 检查项 | 结果 |
 |---|---|
-| 会话发现 | 数十个会话,覆盖 pi / Claude / opencode 三种存储格式 |
+| 会话发现 | 数十个会话,覆盖 pi / Claude / opencode / Zed / DeepSeek Harness 五种存储格式 |
 | 活性判定 | 运行中的会话全部匹配到终端标签序号与状态字形 |
 | 聚焦窗口 | 经 UI Automation 选中标签并置前,多次实测成功 |
 | 分屏面板(**由拓展提供**) | 同页并排运行多个会话,每格是真实 PTY,输出经终端仿真渲染;见拓展 [tui-panes](https://github.com/Zzz210s/tui-panes) |
@@ -270,15 +272,30 @@ scripts/                windows.ps1(枚举进程与标签)· focus.ps1(选中标
 | 单测 | `node --test test/*.test.js` 全部通过(采集解析 / 合并 / 格式化 / 模糊匹配 / 渲染 / 按键 / 屏幕挂起) |
 | 启动耗时 | 全量扫描约 1 秒 |
 
+## GUI 会话(Zed / DeepSeek Harness)
+
+Zed 与 DeepSeek Harness 是桌面应用,会话不在终端里,但它们的元数据能被发现并和 CLI 会话一起列出:
+
+| 应用 | 会话存储 | ais 读到什么 |
+|---|---|---|
+| Zed | `%LOCALAPPDATA%\Zed\threads\threads.db`(Linux:`~/.local/share/zed/threads/threads.db`) | SQLite 里的线程元数据:标题、创建/更新时间、所属项目(`folder_paths`)、父线程;线程正文是 zstd BLOB,**不解压** |
+| DeepSeek Harness | `$DSH_HOME`(默认 `~/.dsh`)下 `storages/session_projcache/sessions/` 的元数据 + `sessions/<项目slug>/<id>/session.v4.jsonl.zstd` 的正文 | 元数据:标题、时间、项目、体积;正文 **不解压** |
+
+**限制**:
+
+- 两者都没有「打开指定会话」的入口,ais 无法把某条会话带回前台,也没有「接管终端」(桌面应用没有命令行恢复入口)
+- **Zed 的线程不能在 ais 里删除** —— 它的存储是 SQLite,按行删有损坏应用数据的风险,请到 Zed 内删
+- **DeepSeek Harness 的会话可以删**:会话目录与 `session_projcache` 里的元数据条目会一起移入回收站,应用里不会留下悬挂条目
+
 ## 覆盖与边界
 
-- **已覆盖**:pi(名称/主题/状态/精确聚焦/attach)、Claude Code(摘要/话题/attach `--resume`)、opencode(会话列表 + attach)
-- **未覆盖**:Zed、Gemini/Antigravity、跨机器
-- **限制**:无心跳时标签匹配依赖会话名;不用 `psutil.open_files()` 判定归属(Windows 上不可靠);不读取 Claude 的 `~/.claude/ide/*.lock`(含 authToken)
+- **已覆盖**:pi(名称/主题/状态/精确聚焦/attach)、Claude Code(摘要/话题/attach `--resume`)、opencode(会话列表 + attach)、Zed(线程元数据只读)、DeepSeek Harness(会话元数据只读,可删除)
+- **未覆盖**:Gemini/Antigravity、跨机器
+- **限制**:两个 GUI 应用都只读元数据、无法在应用内打开指定会话(见上节);无心跳时标签匹配依赖会话名;不用 `psutil.open_files()` 判定归属(Windows 上不可靠);不读取 Claude 的 `~/.claude/ide/*.lock`(含 authToken)
 
 ## 路线图
 
-1. Zed(`db.sqlite` sidebar_threads)与 Gemini/Antigravity(`brain/<id>/`)采集
+1. Gemini/Antigravity(`brain/<id>/`)采集
 2. 会话备注/标签/归档;额度面板;hook 驱动的秒级刷新
 3. 分屏:可拖拽调整面板比例、面板内滚动回看(引擎见 [tui-panes](https://github.com/Zzz210s/tui-panes))
 

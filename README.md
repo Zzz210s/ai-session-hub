@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A host-level **AI session overview** for your terminal (TUI): one keyboard-driven board listing every **running** and **historical** session of pi / Claude Code / opencode on this machine, annotated and searchable — press Enter to jump to the terminal window that owns it, open it in a **split pane**, or hand the terminal over to it.
+A host-level **AI session overview** for your terminal (TUI): one keyboard-driven board listing every **running** and **historical** session of pi / Claude Code / opencode on this machine, annotated and searchable — press Enter to jump to the terminal window that owns it, open it in a **split pane**, or hand the terminal over to it. It also lists sessions from the **Zed** and **DeepSeek Harness** GUI apps (metadata only — neither has a terminal to hand over to).
 
 ```
  AI 会话总览                          共 42 | 运行中 3 | 需关注 1
@@ -31,7 +31,7 @@ This tool fills that gap: it discovers sessions you already started, annotates t
 
 | Feature | Notes |
 |---|---|
-| Session discovery | pi: `~/.pi/agent/sessions/**/*.jsonl` · Claude: `~/.claude/projects/**/*.jsonl` · opencode: `~/.local/share/opencode/opencode.db` |
+| Session discovery | pi: `~/.pi/agent/sessions/**/*.jsonl` · Claude: `~/.claude/projects/**/*.jsonl` · opencode: `~/.local/share/opencode/opencode.db` · Zed: `%LOCALAPPDATA%\Zed\threads\threads.db` (GUI, metadata only) · DeepSeek Harness: `$DSH_HOME/storages/session_projcache/sessions/` (GUI, metadata only) |
 | Liveness | heartbeat registry (exact) > terminal tab title match (locates the tab) > process start time vs session creation time (fallback) |
 | Status annotation | parses the glyph written by pi-tab-status into `*` thinking / `>` running a tool / `\|` waiting / `?` possibly stalled / `x` error / `.` idle; sessions needing you are flagged `!` and can be filtered with `2` |
 | Focus window | selects the matching Windows Terminal tab via UI Automation and brings the window forward |
@@ -98,6 +98,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | 2 | `pi update --extensions` | **strict** |
 | 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **best effort**: a step is only planned for an installed CLI, and a failure never blocks startup |
 
+- **GUI apps are version-probed only**: Zed and DeepSeek Harness ship their own updaters, so ais reports their versions but never upgrades them; a global `@deepseek-ai/dsh` CLI is added as a best-effort step only when installed (the summary says whether it was skipped or updated)
 - **No version or change detection**: the same sequence runs on every launch (nothing to install means it just no-ops)
 - **Standalone**: it only touches the CLIs and their plugins — it never `git pull`s another repo or runs someone else's `setup.sh` (pinned by `test/standalone.test.js`)
 - **Skip it**: `ais --no-update` or `AIS_NO_UPDATE=1 ais`
@@ -168,6 +169,7 @@ Each tool gets its own color, taken from that CLI's own palette so the list look
 | opencode | `#fab283` (opencode TUI theme `primary`) | 216 |
 | codex | `#10a37f` (OpenAI green) | 35 |
 | zed | `#5f87ff` (Zed blue) | 69 |
+| dsh | `#4d6bfe` (DeepSeek blue) | 63 |
 | gemini | `#4285f4` (Google blue) | 33 |
 | anything else | neutral gray | 250 |
 
@@ -255,7 +257,7 @@ src/
 ├── model.ts          data model
 ├── fuzzy.ts          fuzzy match & ranking (pure)
 ├── format.ts         list/status formatting (pure)
-├── scan/             session stores: pi.ts / claude.ts / opencode.ts / io.ts (head+tail read, streamed marker scan)
+├── scan/             session stores: pi.ts / claude.ts / opencode.ts / zed.ts / dsh.ts / io.ts (head+tail read, streamed marker scan)
 ├── live/             liveness: windows.ts (processes + WT tabs via PowerShell/UIA) · heartbeat.ts · correlate.ts (pure)
 ├── panes.ts          adapter to the optional tui-panes engine
 ├── tui-attach.ts     full-terminal hand-over flow
@@ -285,7 +287,7 @@ npm test
 
 | Check | Result |
 |---|---|
-| Session discovery | dozens of sessions across all three store formats (pi JSONL, Claude JSONL, opencode SQLite) |
+| Session discovery | dozens of sessions across all five store formats (pi JSONL, Claude JSONL, opencode SQLite, Zed SQLite, DSH metadata) |
 | Liveness | every running session matched to its terminal tab index and status glyph |
 | Focus window | selects the tab and brings the window forward (verified repeatedly) |
 | Split panes | pane renders the session's real output and accepts input |
@@ -293,15 +295,30 @@ npm test
 | Unit tests | `node --test test/*.test.js` — all green (parsing, correlation, formatting, fuzzy match, rendering, keys, screen suspend) |
 | Startup | full scan ≈ 1 second |
 
+## GUI sessions (Zed / DeepSeek Harness)
+
+Zed and DeepSeek Harness are desktop apps whose sessions never live in a terminal, yet their metadata is discovered and listed alongside the CLI sessions:
+
+| App | Session store | What ais reads |
+|---|---|---|
+| Zed | `%LOCALAPPDATA%\Zed\threads\threads.db` (Linux: `~/.local/share/zed/threads/threads.db`) | thread metadata from SQLite: title, created/updated times, project (`folder_paths`), parent thread; thread bodies are zstd BLOBs and are **never decompressed** |
+| DeepSeek Harness | metadata under `$DSH_HOME` (default `~/.dsh`) in `storages/session_projcache/sessions/`, plus bodies at `sessions/<project-slug>/<id>/session.v4.jsonl.zstd` | metadata: title, timestamps, project, size; bodies are **never decompressed** |
+
+**Limits**:
+
+- Neither app offers a way to open one specific session, so ais cannot bring a session forward, and there is no terminal to hand over to (a desktop app has no command-line resume entry point)
+- **Zed threads cannot be deleted from ais** — the store is SQLite and deleting rows risks corrupting the app's data; delete them inside Zed
+- **DeepSeek Harness sessions can be deleted**: the session directory and its `session_projcache` metadata entry go to the trash together, so the app is not left with a dangling entry
+
 ## Scope & limits
 
-- **Covered**: pi (name/topic/status/focus/attach/panes), Claude Code (summary/topic/attach/panes), opencode (list/panes)
-- **Not covered**: Zed, Gemini/Antigravity, cross-machine
-- **Limits**: without heartbeats, tab matching relies on the session name; `psutil.open_files()` is avoided (unreliable on Windows); Claude's `~/.claude/ide/*.lock` is never read (it contains authToken)
+- **Covered**: pi (name/topic/status/focus/attach/panes), Claude Code (summary/topic/attach/panes), opencode (list/panes), Zed (thread metadata, read-only), DeepSeek Harness (session metadata, read-only, deletable)
+- **Not covered**: Gemini/Antigravity, cross-machine
+- **Limits**: both GUI apps are metadata-only and a specific session cannot be opened inside them (see above); without heartbeats, tab matching relies on the session name; `psutil.open_files()` is avoided (unreliable on Windows); Claude's `~/.claude/ide/*.lock` is never read (it contains authToken)
 
 ## Roadmap
 
-1. Zed (`db.sqlite` sidebar_threads) and Gemini/Antigravity (`brain/<id>/`) collectors
+1. Gemini/Antigravity (`brain/<id>/`) collector
 2. Session notes/tags/archiving; usage panel; hook-driven instant refresh
 3. Panes: draggable ratios, scrollback inside a pane (engine: [tui-panes](https://github.com/Zzz210s/tui-panes))
 
