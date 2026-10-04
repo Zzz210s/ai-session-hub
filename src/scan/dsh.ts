@@ -2,8 +2,8 @@
  * DeepSeek Harness(DSH)会话采集:$DSH_HOME(默认 ~/.dsh)下的元数据。
  *
  * 来源(全部只读,不解压正文):
- *   storages/session_projcache/sessions/<id>.json   标题、lastPromptAt、token 用量
- *   storages/workspace.json                          归档/置顶清单、工作区路径
+ *   storages/session_projcache/sessions/<id>.json   标题、lastPromptAt
+ *   storages/workspace.json                          归档/置顶清单、默认工作区路径
  *   sessions/<项目slug>/<id>/session.v4.jsonl.zstd   存在性、大小、mtime
  */
 
@@ -29,30 +29,51 @@ export function decodeSlug(slug: string): string | undefined {
 	return `${parts[0]}:\\${parts.slice(1).join("\\")}`;
 }
 
+/** 合法时间戳(毫秒);坏数据返回 undefined,交给文件 mtime 兜底 */
+function validTime(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 interface DshMeta {
 	title?: string;
 	lastPromptAt?: number;
-	tokenTotals?: number;
 }
 
 function readMeta(json: unknown): DshMeta | undefined {
 	const rows = (json as { record?: { rows?: Record<string, { val?: unknown }> } })?.record?.rows;
 	if (!rows) return undefined;
-	const title = (rows.title?.val as string | undefined)?.trim();
-	const listMeta = rows.sessionListMetadata?.val as { lastPromptAt?: number } | undefined;
-	const totals = (rows.tokenUsage?.val as { totals?: Record<string, number> } | undefined)?.totals;
-	const sum = totals ? Object.values(totals).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0) : undefined;
-	return { title, lastPromptAt: listMeta?.lastPromptAt, tokenTotals: sum };
+	const rawTitle = rows.title?.val;
+	const listMeta = rows.sessionListMetadata?.val as { lastPromptAt?: unknown } | undefined;
+	// 坏数据只丢该字段,不丢整条会话
+	return {
+		title: typeof rawTitle === "string" ? rawTitle.trim() : undefined,
+		lastPromptAt: validTime(listMeta?.lastPromptAt),
+	};
 }
 
-async function readWorkspace(home: string): Promise<{ archived: Set<string>; pinned: Set<string> }> {
+interface WorkspaceInfo {
+	archived: Set<string>;
+	pinned: Set<string>;
+	/** 默认工作区路径(decodeSlug 失败时的 cwd 兜底) */
+	defaultPath?: string;
+}
+
+function idList(value: unknown): string[] {
+	return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+async function readWorkspace(home: string): Promise<WorkspaceInfo> {
 	try {
 		const raw = JSON.parse(await readFile(join(home, "storages", "workspace.json"), "utf8")) as {
-			global?: { archivedSessionIds?: string[]; pinnedSessionIds?: string[] };
+			global?: { archivedSessionIds?: unknown; pinnedSessionIds?: unknown; defaultWorkspaceId?: unknown };
+			tables?: { workspaces?: Record<string, { path?: unknown }> };
 		};
+		const wsId = typeof raw.global?.defaultWorkspaceId === "string" ? raw.global.defaultWorkspaceId : undefined;
+		const path = wsId ? raw.tables?.workspaces?.[wsId]?.path : undefined;
 		return {
-			archived: new Set(raw.global?.archivedSessionIds ?? []),
-			pinned: new Set(raw.global?.pinnedSessionIds ?? []),
+			archived: new Set(idList(raw.global?.archivedSessionIds)),
+			pinned: new Set(idList(raw.global?.pinnedSessionIds)),
+			defaultPath: typeof path === "string" && path.length > 0 ? path : undefined,
 		};
 	} catch {
 		return { archived: new Set(), pinned: new Set() };
@@ -63,7 +84,7 @@ export async function scanDshSessions(home: string = dshHome()): Promise<Session
 	const metaDir = join(home, "storages", "session_projcache", "sessions");
 	const sessionsRoot = join(home, "sessions");
 	if (!existsSync(metaDir)) return [];
-	const { archived, pinned } = await readWorkspace(home);
+	const { archived, pinned, defaultPath } = await readWorkspace(home);
 
 	// 1) 元数据:每文件一条会话
 	const metas = new Map<string, { file: string; meta: DshMeta }>();
@@ -94,7 +115,7 @@ export async function scanDshSessions(home: string = dshHome()): Promise<Session
 	}
 	const seen = new Set<string>();
 	for (const slug of slugs) {
-		const cwd = decodeSlug(slug);
+		const cwd = decodeSlug(slug) ?? defaultPath;
 		let ids: string[] = [];
 		try {
 			ids = (await readdir(join(sessionsRoot, slug), { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
@@ -106,21 +127,23 @@ export async function scanDshSessions(home: string = dshHome()): Promise<Session
 			records.push(await buildRecord(id, join(sessionsRoot, slug, id), cwd, metas, archived, pinned));
 		}
 	}
-	// 3) 只有元数据、正文目录缺失的会话也要列出来(标记正文缺失)
+	// 3) 只有元数据、正文目录缺失的会话也要列出来(时间用元数据文件 mtime 兜底)
 	for (const [id, entry] of metas) {
 		if (seen.has(id)) continue;
+		const at = (await stat(entry.file).catch(() => null))?.mtime ?? new Date(0);
+		const title = entry.meta.title;
 		records.push({
 			tool: "dsh",
 			id,
 			file: "",
 			metaFile: entry.file,
-			cwd: "",
-			name: entry.meta.title || undefined,
-			named: Boolean(entry.meta.title),
-			topic: entry.meta.title ?? "(正文缺失)",
-			firstMessage: entry.meta.title ?? "",
-			createdAt: new Date(entry.meta.lastPromptAt ?? 0),
-			updatedAt: new Date(entry.meta.lastPromptAt ?? 0),
+			cwd: defaultPath ?? "",
+			name: title || undefined,
+			named: false,
+			topic: title || "(未命名会话)",
+			firstMessage: title || "",
+			createdAt: at,
+			updatedAt: at,
 			archived: archived.has(id),
 			pinned: pinned.has(id),
 		});
@@ -138,8 +161,9 @@ async function buildRecord(
 ): Promise<SessionRecord> {
 	const entry = metas.get(id);
 	const title = entry?.meta.title ?? "";
+	const lastPromptAt = entry?.meta.lastPromptAt;
 	let size: number | undefined;
-	let updated = entry?.meta.lastPromptAt ? new Date(entry.meta.lastPromptAt) : undefined;
+	let updated = lastPromptAt ? new Date(lastPromptAt) : undefined;
 	let created: Date | undefined;
 	try {
 		const fileStat = await stat(join(dir, "session.v4.jsonl.zstd"));
@@ -156,7 +180,8 @@ async function buildRecord(
 		metaFile: entry?.file,
 		cwd: cwd ?? "",
 		name: title || undefined,
-		named: title.length > 0,
+		// 与 zed/opencode 一致:标题是自动生成,不算“用户命名”
+		named: false,
 		topic: title || "(未命名会话)",
 		firstMessage: title,
 		createdAt: created ?? updated ?? new Date(0),
