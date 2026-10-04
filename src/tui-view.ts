@@ -154,7 +154,7 @@ function footerText(state: TuiState): string {
 		: state.searchMode
 			? "输入即筛选 | Enter 完成 | Esc 取消搜索 | ⌫ 删空退出"
 			: state.rows[state.cursor]?.kind === "gui"
-				? "Enter 聚焦窗口 | c 复制会话信息 | d 删除(DSH) | q 退出"
+				? "Enter 聚焦窗口 | c 复制会话信息 | q 退出"
 				: "a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出";
 	const message = state.confirm ?? state.message;
 	return message ? `${keys} | ${sanitizeForDisplay(message)}` : keys;

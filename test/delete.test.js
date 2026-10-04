@@ -45,6 +45,14 @@ test("planDelete:opencode(SQLite)暂不支持", async () => {
 	assert.match(plan.reason, /SQLite/);
 });
 
+test("planDelete:Zed(SQLite)禁用删除,避免改坏整个 threads.db", async () => {
+	// Zed 的会话 file 就是 threads.db 本身,若不拦会整库进回收站
+	const plan = await planDelete(view({ tool: "zed", file: "C:/Zed/threads/threads.db" }));
+	assert.equal(plan.supported, false);
+	assert.match(plan.reason, /Zed/);
+	assert.match(plan.reason, /SQLite/);
+});
+
 test("planDelete:文件缺失时不可删除", async () => {
 	const plan = await planDelete(view({ file: "C:/nope/missing.jsonl" }));
 	assert.equal(plan.supported, false);

@@ -115,6 +115,14 @@ test("renderScreen:未装拓展时界面不出现任何拓展相关内容", () =
 	assert.ok(!text.includes("Enter"), "footer 不再承诺 Enter(其行为取决于状态与拓展)");
 });
 
+test("renderScreen:GUI 会话的提示不广告未落地的删除键", () => {
+	const rows = [view({ id: "z", tool: "zed", kind: "gui", appRunning: false })];
+	const footer = stripAnsi(renderScreen(state({ rows, cursor: 0 })).at(-1));
+	assert.match(footer, /Enter 聚焦窗口/);
+	assert.match(footer, /c 复制会话信息/);
+	assert.ok(!footer.includes("d 删除"), "DSH 删除落地前不得提示删除键");
+});
+
 test("renderScreen:装了拓展时展示拓展自己的键位提示", () => {
 	const withHints = { ...state(), customHints: ["Enter 分屏打开"] };
 	const text = stripAnsi(renderScreen(withHints).join("\n"));

@@ -6,6 +6,7 @@
  *   2. 不做硬删除:文件型会话移入回收目录 ~/.ai-session-hub/trash/,可恢复
  *   3. 同时清理该会话残留的心跳记录,避免留下"幽灵运行中"状态
  *   4. opencode 的会话存于 SQLite(与其它会话共用同一 .db),暂不支持删除
+ *   5. Zed 的线程也存于 SQLite(整个 threads.db),禁用删除(设计 §3.4)
  */
 
 import { existsSync } from "node:fs";
@@ -77,6 +78,9 @@ export async function planDelete(view: SessionView, options: DeleteOptions = {})
 	}
 	if (view.tool === "opencode") {
 		return { supported: false, reason: "opencode 的会话存于 SQLite(与其它会话共用同一库),暂不支持删除" };
+	}
+	if (view.tool === "zed") {
+		return { supported: false, reason: "Zed 的线程存于 SQLite(改行有损坏应用数据的风险),请在 Zed 内删除" };
 	}
 	if (!view.file || !existsSync(view.file)) {
 		return { supported: false, reason: `会话文件不存在: ${view.file || "(空)"}` };
