@@ -21,7 +21,8 @@
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { preflight, type Step } from "./preflight.ts";
+import { appVersionSummary, hasGlobalDshCli, planDshCliStep, readAppVersions } from "./apps.ts";
+import { execRunner, preflight, type Runner, type Step } from "./preflight.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 const PATH_SEP = IS_WINDOWS ? ";" : ":";
@@ -146,6 +147,14 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Ste
 	return steps; // 独立程序:不拉别人的仓库,也不跑别人的 setup.sh
 }
 
+/** DSH 全局 CLI 的更新步骤(0 或 1 个);npmAvailable 与 runner 可注入以便离线单测 */
+export async function planDshCliSteps(runner: Runner = execRunner, npmAvailable = isInstalled("npm")): Promise<Step[]> {
+	if (!npmAvailable) return [];
+	const shell = resolvePreflightShell();
+	const step = planDshCliStep({ npmAvailable: true, hasGlobalCli: await hasGlobalDshCli({ shell, runner }) });
+	return step ? [step] : [];
+}
+
 /** 毫秒 → "12.3s" / "820ms" */
 export function formatDuration(ms: number): string {
 	return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
@@ -157,6 +166,7 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 		if (options.disabled || process.env.AIS_NO_UPDATE === "1") return undefined;
 		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: resolvePreflightShell() });
 		if (steps.length === 0) return undefined;
+		steps.push(...(await planDshCliSteps()));
 		const say = options.onProgress ?? ((message: string) => process.stdout.write("[ais] " + message + "\n"));
 		say("执行 " + steps.length + " 项更新…");
 		const result = await preflight({
@@ -166,7 +176,8 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 				say(ok ? `${label} 完成(${formatDuration(ms)})` : `${label} 失败(${formatDuration(ms)})${detail ? ": " + detail : ""}`),
 		});
 		const failed = result.steps.filter((step) => !step.ok);
-		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)");
+		const versions = await readAppVersions({ shell: resolvePreflightShell() });
+		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions);
 	} catch (error) {
 		return "[ais] 自更新跳过(" + (error instanceof Error ? error.message : String(error)) + ")";
 	}

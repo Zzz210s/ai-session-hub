@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { isInstalled, planUpdateSteps, resolvePi } from "../src/preflight-run.ts";
+import { isInstalled, planDshCliSteps, planUpdateSteps, resolvePi } from "../src/preflight-run.ts";
 
 const BASH = "C:/Program Files/Git/bin/bash.exe";
 
@@ -87,4 +87,21 @@ test("planUpdateSteps:类 Unix 上用 $SHELL 执行,步骤与 Windows 一致", (
 	assert.ok(steps.length >= 2, "pi 本体与扩展恒在");
 	assert.equal(steps[0].command, "/bin/bash");
 	assert.match(steps[0].args[1], /"\/usr\/local\/bin\/pi" update/);
+});
+
+test("DSH CLI 步骤:查不到全局 CLI 就不排,查到才排进 npm 组", async () => {
+	const miss = async () => ({ ok: true, out: "C:/x\n└── (empty)\n" });
+	assert.deepEqual(await planDshCliSteps(miss, true), [], "npm 里没有 DSH 就不排步骤");
+	assert.deepEqual(await planDshCliSteps(async () => ({ ok: true, out: "@deepseek-ai/dsh@0.2.0" }), false), [], "没装 npm 就不排步骤");
+	let calls = 0;
+	const hit = async () => {
+		calls += 1;
+		return { ok: true, out: "C:/x\n└── @deepseek-ai/dsh@0.2.0\n" };
+	};
+	const steps = await planDshCliSteps(hit, true);
+	assert.equal(calls, 1, "必须经注入的 runner 探测(测试不真的跑 npm)");
+	assert.equal(steps.length, 1);
+	assert.equal(steps[0].label, "更新 DSH CLI");
+	assert.equal(steps[0].group, "npm");
+	assert.deepEqual(steps[0].args.slice(0, 3), ["i", "-g", "@deepseek-ai/dsh@latest"]);
 });
