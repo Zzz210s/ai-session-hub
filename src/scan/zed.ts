@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SessionRecord } from "../model.ts";
+import { fileMeta } from "./io.ts";
 
 export function zedThreadsDbPath(env: NodeJS.ProcessEnv = process.env): string {
 	if (process.platform === "win32") {
@@ -34,8 +35,10 @@ export function firstFolder(value: unknown): string {
 			const list = JSON.parse(text) as unknown;
 			if (Array.isArray(list) && typeof list[0] === "string") return list[0];
 		} catch {
-			return "";
+			// 解析失败:按设计留空
 		}
+		// JSON 数组但首元素非字符串 / 空数组 / 解析失败,都返回空串
+		return "";
 	}
 	return text;
 }
@@ -53,6 +56,8 @@ interface ZedRow {
 export async function scanZedSessions(dbPath: string = zedThreadsDbPath()): Promise<SessionRecord[]> {
 	if (!existsSync(dbPath)) return [];
 	try {
+		// 时间解析失败时用文件 mtime 兜底(设计 §4);循环外取一次,避免每行重复 stat
+		const meta = await fileMeta(dbPath).catch(() => null);
 		const { DatabaseSync } = await import("node:sqlite");
 		const db = new DatabaseSync(dbPath, { readOnly: true });
 		try {
@@ -71,11 +76,13 @@ export async function scanZedSessions(dbPath: string = zedThreadsDbPath()): Prom
 					file: dbPath,
 					cwd: firstFolder(row.folder_paths),
 					name: title || undefined,
-					named: title.length > 0,
+					// 与 opencode 一致:Zed 的 summary 是自动生成标题,不算“用户命名”
+					named: false,
 					topic: title,
+					// Zed 的正文是 zstd blob,不解压,所以这里用摘要代替首条用户消息(勿当原文搜索)
 					firstMessage: title,
-					createdAt: created ?? updated ?? new Date(0),
-					updatedAt: updated ?? created ?? new Date(0),
+					createdAt: created ?? updated ?? meta?.mtime ?? new Date(0),
+					updatedAt: updated ?? created ?? meta?.mtime ?? new Date(0),
 					parentId: row.parent_id ?? undefined,
 					sizeBytes: row.size ?? undefined,
 				};

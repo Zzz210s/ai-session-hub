@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { scanZedSessions } from "../src/scan/zed.ts";
+import { firstFolder, scanZedSessions } from "../src/scan/zed.ts";
 
 async function makeDb(rows) {
 	const dir = mkdtempSync(join(tmpdir(), "ais-zed-"));
@@ -17,6 +17,10 @@ async function makeDb(rows) {
 	for (const r of rows) insert.run(r.id, r.summary, r.updated_at, "zstd", Buffer.alloc(r.bytes ?? 10), r.parent_id, r.folder_paths, "0", r.created_at);
 	db.close();
 	return { dbPath, dir };
+}
+
+function cleanup(dir) {
+	rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
 
 test("scanZedSessions:标题/时间/项目/父线程/大小都映射出来", async () => {
@@ -46,15 +50,40 @@ test("scanZedSessions:标题/时间/项目/父线程/大小都映射出来", asy
 		const [first] = rows;
 		assert.equal(first.tool, "zed");
 		assert.equal(first.name, "审查阶段一收尾");
-		assert.equal(first.named, true);
+		assert.equal(first.named, false, "自动生成的 summary 不算用户命名");
 		assert.equal(first.cwd, "C:\\Users\\23652");
 		assert.equal(first.createdAt.toISOString(), "2026-09-03T12:44:59.550Z");
 		assert.equal(first.sizeBytes, 87);
 		assert.equal(rows[1].parentId, "t1");
 		assert.equal(rows[1].cwd, "C:\\a", "JSON 数组取第一个");
 	} finally {
-		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+		cleanup(dir);
 	}
+});
+
+test("scanZedSessions:空摘要与非法时间按设计降级", async () => {
+	const { dbPath, dir } = await makeDb([
+		{ id: "t3", summary: "", updated_at: "not-a-time", created_at: null, folder_paths: "C:\\x", parent_id: null, bytes: 3 },
+	]);
+	try {
+		const mtime = statSync(dbPath).mtime;
+		const [row] = await scanZedSessions(dbPath);
+		assert.equal(row.name, undefined);
+		assert.equal(row.named, false);
+		assert.equal(row.topic, "");
+		assert.equal(row.updatedAt.getTime(), mtime.getTime(), "非法时间回落到文件 mtime");
+		assert.notEqual(row.updatedAt.getTime(), 0, "不再落到 1970");
+	} finally {
+		cleanup(dir);
+	}
+});
+
+test("firstFolder:非字符串首元素 / 空数组返回空串", () => {
+	assert.equal(firstFolder('["C:\\\\a","C:\\\\b"]'), "C:\\a");
+	assert.equal(firstFolder("[1,2]"), "");
+	assert.equal(firstFolder("[]"), "");
+	assert.equal(firstFolder("not-json["), "not-json[");
+	assert.equal(firstFolder("C:\\Users\\23652"), "C:\\Users\\23652");
 });
 
 test("scanZedSessions:库不存在时返回空数组,不抛错", async () => {
