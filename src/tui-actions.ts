@@ -4,7 +4,7 @@
  * runTui 里只剩编排与渲染。
  */
 
-import type { SessionView, Tool } from "./model.ts";
+import { guiLabel, type SessionView, type Tool } from "./model.ts";
 import type { ActionResult } from "./actions.ts";
 import { copyResumeCommand, focusSession } from "./actions.ts";
 import { copySessionInfo as realCopySessionInfo, focusApp as realFocusApp } from "./gui-actions.ts";
@@ -41,12 +41,9 @@ export interface TuiActions {
 	act: (kind: ActionKind) => Promise<void>;
 }
 
-/** GUI 工具的中文展示名(提示文案用) */
-const GUI_LABEL: Record<string, string> = { zed: "Zed", dsh: "DeepSeek Harness" };
-
 /** GUI 应用的 attach 提示:没有终端可接管 */
 function guiNoTerminalMessage(tool: Tool): string {
-	return `${GUI_LABEL[tool] ?? tool} 是 GUI 应用:没有终端可接管,按 Enter/f 聚焦窗口`;
+	return `${guiLabel(tool)} 是 GUI 应用:没有终端可接管,按 Enter/f 聚焦窗口`;
 }
 
 export function createTuiActions(deps: TuiActionDeps): TuiActions {

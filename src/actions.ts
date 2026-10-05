@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { SessionView } from "./model.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { focusTab, focusWindow } from "./live/windows.ts";
-import { focusWindowLinux, openInNewTerminal } from "./live/linux.ts";
+import { focusWindowLinux, openInNewTerminal } from "./live/linux-focus.ts";
 import { resolveShell, shellArgs } from "./shell.ts";
 
 export { copySessionInfo, focusApp } from "./gui-actions.ts";

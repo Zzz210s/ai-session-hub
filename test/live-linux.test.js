@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyPsRows, matchWmctrlApps, parsePsOutput, parseWmctrlOutput } from "../src/live/linux.ts";
+import { wmctrlActivateArgs } from "../src/live/linux-focus.ts";
 import { toolFromProcessName } from "../src/live/gui.ts";
 import { classifyProcess } from "../src/live/classify.ts";
 
@@ -93,6 +94,10 @@ test("matchWmctrlApps:按进程名(不是标题)判定,标题是 23652 也能认
 			["dsh", 333, "config-ai - DeepSeek Harness"],
 		],
 	);
+});
+
+test("wmctrlActivateArgs:按句柄激活用 -i -a(不回喂标题)", () => {
+	assert.deepEqual(wmctrlActivateArgs("0x03400007"), ["-i", "-a", "0x03400007"]);
 });
 
 test("matchWmctrlApps:同一 pid 的多个窗口按 pid 去重,只留第一条", async () => {

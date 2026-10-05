@@ -8,7 +8,7 @@
 import { summarize } from "./format.ts";
 import { configuredExtensions } from "./extensions.ts";
 import { countHeartbeats } from "./live/heartbeat.ts";
-import { hasCommand } from "./live/linux.ts";
+import { hasCommand } from "./live/exec.ts";
 import { canRecycleToSystem } from "./recycle.ts";
 import { resolveShell, shellFlavor, shellPromptLabel } from "./shell.ts";
 import { describeToolColors } from "./theme.ts";

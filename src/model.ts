@@ -9,6 +9,14 @@ export type SessionKind = "cli" | "gui";
 
 const GUI_TOOLS: ReadonlySet<Tool> = new Set<Tool>(["zed", "dsh"]);
 
+/** GUI 工具的中文展示名(提示文案统一用这个,不要露原始 id) */
+export const GUI_LABEL: Record<string, string> = { zed: "Zed", dsh: "DeepSeek Harness" };
+
+/** 工具展示名:未知工具回退原 id */
+export function guiLabel(tool: Tool): string {
+	return GUI_LABEL[tool] ?? tool;
+}
+
 /** 由工具推断会话形态(纯函数) */
 export function kindOf(tool: Tool): SessionKind {
 	return GUI_TOOLS.has(tool) ? "gui" : "cli";
