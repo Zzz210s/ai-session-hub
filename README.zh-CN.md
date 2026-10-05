@@ -93,7 +93,7 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 | 2 | `pi update --extensions` | **严格** |
 | 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **尽力而为**:只给装了的排步骤,失败不拦住启动 |
 
-- **GUI 应用只探测版本**:Zed 与 DeepSeek Harness 是自带更新器的桌面应用,ais 只报告它们的版本、不代管升级;若装了 `@deepseek-ai/dsh` 全局 CLI,才把它作为尽力而为的一步排进更新(摘要里说明跳过还是更新)
+- **GUI 应用只探测版本(仅 Windows)**:Zed 与 DeepSeek Harness 是自带更新器的桌面应用,ais 只报告它们的版本、不代管升级(版本探测读 Windows 卸载注册表,其它平台不报版本);若装了 `@deepseek-ai/dsh` 全局 CLI,才把它作为尽力而为的一步排进更新(摘要里说明跳过还是更新)
 - **不做版本/变更检测**:每次按固定顺序跑一遍(有更新就装,没有就是空转)
 - **独立程序**:只动 CLI 与它们的插件 —— 不 `git pull` 别人的仓库,也不跑别人的 `setup.sh`(由 `test/standalone.test.js` 固化)
 - **跳过**:`ais --no-update` 或 `AIS_NO_UPDATE=1 ais`
@@ -121,6 +121,8 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 | `Backspace` | 搜索态下删字;已经删空时再按一次直接退出搜索 |
 | `r` | 手动刷新 |
 | `q` / `Esc` / `Ctrl+C` | 退出(退出时打印原因,如 `已退出(q)`) |
+
+GUI 会话(Zed / DeepSeek Harness)的键位与上面不同——见下文「GUI 会话」。
 
 ## 删除会话
 
@@ -281,15 +283,24 @@ Zed 与 DeepSeek Harness 是桌面应用,会话不在终端里,但它们的元�
 | Zed | `%LOCALAPPDATA%\Zed\threads\threads.db`(Linux:`~/.local/share/zed/threads/threads.db`) | SQLite 里的线程元数据:标题、创建/更新时间、所属项目(`folder_paths`)、父线程;线程正文是 zstd BLOB,**不解压** |
 | DeepSeek Harness | `$DSH_HOME`(默认 `~/.dsh`)下 `storages/session_projcache/sessions/` 的元数据 + `sessions/<项目slug>/<id>/session.v4.jsonl.zstd` 的正文 | 元数据:标题、时间、项目、体积;正文 **不解压** |
 
+**按键**(GUI 会话没有终端,与 CLI 会话不同):
+
+| 键 | 动作 |
+|---|---|
+| `Enter` / `f` | 聚焦应用窗口(没有终端可接管) |
+| `c` | 复制会话信息(在应用里的查找线索,**不是**恢复命令) |
+| `a` | 明确提示 GUI 应用没有终端可接管 |
+| `d` | 删除 —— **仅 DeepSeek Harness 可用**;Zed 会被拒绝(线程存于 SQLite,按行删有损坏应用数据的风险) |
+
 **限制**:
 
 - 两者都没有「打开指定会话」的入口,ais 无法把某条会话带回前台,也没有「接管终端」(桌面应用没有命令行恢复入口)
 - **Zed 的线程不能在 ais 里删除** —— 它的存储是 SQLite,按行删有损坏应用数据的风险,请到 Zed 内删
-- **DeepSeek Harness 的会话可以删**:会话目录与 `session_projcache` 里的元数据条目会一起移入回收站,应用里不会留下悬挂条目
+- **DeepSeek Harness 的会话可以删**:ais 把会话目录与 `session_projcache` 里的元数据条目一并移入回收站(移的是两个路径,不是数据库行)
 
 ## 覆盖与边界
 
-- **已覆盖**:pi(名称/主题/状态/精确聚焦/attach)、Claude Code(摘要/话题/attach `--resume`)、opencode(会话列表 + attach)、Zed(线程元数据只读)、DeepSeek Harness(会话元数据只读,可删除)
+- **已覆盖**:pi(名称/主题/状态/精确聚焦/attach)、Claude Code(摘要/话题/attach `--resume`)、opencode(会话列表 + attach + 分屏)、Zed(线程元数据只读)、DeepSeek Harness(会话元数据只读,可删除)
 - **未覆盖**:Gemini/Antigravity、跨机器
 - **限制**:两个 GUI 应用都只读元数据、无法在应用内打开指定会话(见上节);无心跳时标签匹配依赖会话名;不用 `psutil.open_files()` 判定归属(Windows 上不可靠);不读取 Claude 的 `~/.claude/ide/*.lock`(含 authToken)
 

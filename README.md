@@ -98,7 +98,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | 2 | `pi update --extensions` | **strict** |
 | 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **best effort**: a step is only planned for an installed CLI, and a failure never blocks startup |
 
-- **GUI apps are version-probed only**: Zed and DeepSeek Harness ship their own updaters, so ais reports their versions but never upgrades them; a global `@deepseek-ai/dsh` CLI is added as a best-effort step only when installed (the summary says whether it was skipped or updated)
+- **GUI apps are version-probed only, on Windows**: Zed and DeepSeek Harness ship their own updaters, so ais reports their versions but never upgrades them — and only on Windows, where the probe reads the uninstall registry (on Linux no version is reported); a global `@deepseek-ai/dsh` CLI is added as a best-effort step only when installed (the summary says whether it was skipped or updated)
 - **No version or change detection**: the same sequence runs on every launch (nothing to install means it just no-ops)
 - **Standalone**: it only touches the CLIs and their plugins — it never `git pull`s another repo or runs someone else's `setup.sh` (pinned by `test/standalone.test.js`)
 - **Skip it**: `ais --no-update` or `AIS_NO_UPDATE=1 ais`
@@ -126,6 +126,8 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `Backspace` | while searching: delete a character; press once more on an empty query to leave search |
 | `r` | refresh now |
 | `q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
+
+GUI sessions (Zed / DeepSeek Harness) use a different key set — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
 
 ## Deleting a session
 
@@ -304,15 +306,24 @@ Zed and DeepSeek Harness are desktop apps whose sessions never live in a termina
 | Zed | `%LOCALAPPDATA%\Zed\threads\threads.db` (Linux: `~/.local/share/zed/threads/threads.db`) | thread metadata from SQLite: title, created/updated times, project (`folder_paths`), parent thread; thread bodies are zstd BLOBs and are **never decompressed** |
 | DeepSeek Harness | metadata under `$DSH_HOME` (default `~/.dsh`) in `storages/session_projcache/sessions/`, plus bodies at `sessions/<project-slug>/<id>/session.v4.jsonl.zstd` | metadata: title, timestamps, project, size; bodies are **never decompressed** |
 
+**Keys** (a GUI session has no terminal, so they differ from a CLI session):
+
+| Key | Action |
+|---|---|
+| `Enter` / `f` | focus the app window (there is no terminal to hand over) |
+| `c` | copy the session info — where to look it up in the app, **not** a resume command |
+| `a` | says plainly that a GUI app has no terminal to hand over |
+| `d` | delete — **DeepSeek Harness only**; Zed is refused (its thread store is SQLite, deleting rows risks corrupting it) |
+
 **Limits**:
 
 - Neither app offers a way to open one specific session, so ais cannot bring a session forward, and there is no terminal to hand over to (a desktop app has no command-line resume entry point)
 - **Zed threads cannot be deleted from ais** — the store is SQLite and deleting rows risks corrupting the app's data; delete them inside Zed
-- **DeepSeek Harness sessions can be deleted**: the session directory and its `session_projcache` metadata entry go to the trash together, so the app is not left with a dangling entry
+- **DeepSeek Harness sessions can be deleted**: ais moves both the session directory and its `session_projcache` metadata entry to the trash together (a single path pair, not a database row)
 
 ## Scope & limits
 
-- **Covered**: pi (name/topic/status/focus/attach/panes), Claude Code (summary/topic/attach/panes), opencode (list/panes), Zed (thread metadata, read-only), DeepSeek Harness (session metadata, read-only, deletable)
+- **Covered**: pi (name/topic/status/focus/attach/panes), Claude Code (summary/topic/attach/panes), opencode (list/attach/panes), Zed (thread metadata, read-only), DeepSeek Harness (session metadata, read-only, deletable)
 - **Not covered**: Gemini/Antigravity, cross-machine
 - **Limits**: both GUI apps are metadata-only and a specific session cannot be opened inside them (see above); without heartbeats, tab matching relies on the session name; `psutil.open_files()` is avoided (unreliable on Windows); Claude's `~/.claude/ide/*.lock` is never read (it contains authToken)
 
