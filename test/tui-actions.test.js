@@ -73,3 +73,49 @@ test("act(smart):有拓展时交给拓展打开,并传入拓展上下文", async
 	assert.deepEqual(seen, [{ marker: "ctx" }]);
 	assert.deepEqual(calls.notify, [], "交给拓展后不应再提示");
 });
+
+const guiRow = (tool, id, name) => ({ tool, id, name, state: "stored", attention: false, kind: "gui" });
+
+test("act:GUI 会话按 Enter 走聚焦(而不是接管终端)", async () => {
+	const calls = [];
+	const { actions } = harness([guiRow("zed", "t1", "线程")], {
+		focusApp: async (tool) => {
+			calls.push(["focusApp", tool]);
+			return { ok: true, detail: "已聚焦 Zed" };
+		},
+	});
+	await actions.act("smart");
+	assert.deepEqual(calls, [["focusApp", "zed"]]);
+});
+
+test("act:GUI 会话按 f 同样只聚焦窗口", async () => {
+	const focused = [];
+	const { actions, calls } = harness([guiRow("zed", "t1", "线程")], {
+		focusApp: async (tool) => {
+			focused.push(["focusApp", tool]);
+			return { ok: true, detail: "已聚焦 Zed 窗口" };
+		},
+	});
+	await actions.act("focus");
+	assert.deepEqual(focused, [["focusApp", "zed"]]);
+	assert.deepEqual(calls.notify, ["已聚焦 Zed 窗口"]);
+});
+
+test("act:GUI 会话按 a(接管)给出明确提示", async () => {
+	const { actions, calls } = harness([guiRow("dsh", "s1", "会话")]);
+	await actions.act("attach");
+	assert.deepEqual(calls.notify, ["DeepSeek Harness 是 GUI 应用:没有终端可接管,按 Enter/f 聚焦窗口"]);
+});
+
+test("act:GUI 会话按 c 复制会话信息(而不是恢复命令)", async () => {
+	const copied = [];
+	const { actions, calls } = harness([guiRow("zed", "t1", "线程")], {
+		copySessionInfo: async (view) => {
+			copied.push(view.id);
+			return { ok: true, detail: "已复制: 会话信息" };
+		},
+	});
+	await actions.act("copy");
+	assert.deepEqual(copied, ["t1"]);
+	assert.deepEqual(calls.notify, ["已复制: 会话信息"]);
+});

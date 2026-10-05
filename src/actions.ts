@@ -2,13 +2,17 @@
  * 动作:聚焦已有终端标签 / 在新标签恢复会话 / 复制恢复命令
  */
 
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
+import { copyToClipboard } from "./clipboard.ts";
 import { focusTab, focusWindow } from "./live/windows.ts";
 import { focusWindowLinux, openInNewTerminal } from "./live/linux.ts";
 import { resolveShell, shellArgs } from "./shell.ts";
+
+export { copySessionInfo, focusApp } from "./gui-actions.ts";
+export { copyToClipboard } from "./clipboard.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -148,22 +152,11 @@ export function resumeInNewTab(view: SessionView): ActionResult {
 	}
 }
 
-/** 复制恢复命令到系统剪贴板 */
+/** 复制恢复命令到系统剪贴板(行为与文案不变,剪贴板写入见 clipboard.ts) */
 export function copyResumeCommand(view: SessionView): ActionResult {
 	const command = resumeCommand(view);
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool}` };
-	const clip = IS_WINDOWS ? "clip.exe" : (process.env.WAYLAND_DISPLAY ? "wl-copy" : process.env.DISPLAY ? "xclip" : "wl-copy");
-	const args = clip === "xclip" ? ["-selection", "clipboard"] : [];
-	return new Promise<ActionResult>((resolve) => {
-		const child = execFile(clip, args, (error) => {
-			resolve(
-				error
-					? { ok: false, detail: `复制失败(${clip}):${error.message.split("\n")[0]}\n可手动复制:${command}` }
-					: { ok: true, detail: `已复制: ${command}` },
-			);
-		});
-		child.stdin?.end(command);
-	}) as unknown as ActionResult;
+	return copyToClipboard(command);
 }
 
 /** 供 shell 里安全地嵌入一个路径 */

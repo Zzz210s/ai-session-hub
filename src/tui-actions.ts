@@ -4,8 +4,10 @@
  * runTui 里只剩编排与渲染。
  */
 
-import type { SessionView } from "./model.ts";
+import type { SessionView, Tool } from "./model.ts";
+import type { ActionResult } from "./actions.ts";
 import { copyResumeCommand, focusSession } from "./actions.ts";
+import { copySessionInfo as realCopySessionInfo, focusApp as realFocusApp } from "./gui-actions.ts";
 import type { ExtensionContext, HubExtension } from "./extensions.ts";
 import type { TuiScreen } from "./tui-screen.ts";
 import type { ActionKind } from "./tui-keys.ts";
@@ -26,6 +28,10 @@ export interface TuiActionDeps {
 	extensions: HubExtension[];
 	/** 拓展上下文(懒取:它依赖 selected,构造在本模块之后) */
 	extensionContext: () => ExtensionContext;
+	/** GUI 会话聚焦窗口(测试注入,默认真实现) */
+	focusApp?: (tool: Tool) => Promise<ActionResult>;
+	/** GUI 会话复制会话信息(测试注入,默认真实现) */
+	copySessionInfo?: (view: SessionView) => Promise<ActionResult>;
 }
 
 export interface TuiActions {
@@ -33,6 +39,14 @@ export interface TuiActions {
 	move: (delta: number) => void;
 	attach: (view: SessionView) => Promise<void>;
 	act: (kind: ActionKind) => Promise<void>;
+}
+
+/** GUI 工具的中文展示名(提示文案用) */
+const GUI_LABEL: Record<string, string> = { zed: "Zed", dsh: "DeepSeek Harness" };
+
+/** GUI 应用的 attach 提示:没有终端可接管 */
+function guiNoTerminalMessage(tool: Tool): string {
+	return `${GUI_LABEL[tool] ?? tool} 是 GUI 应用:没有终端可接管,按 Enter/f 聚焦窗口`;
 }
 
 export function createTuiActions(deps: TuiActionDeps): TuiActions {
@@ -54,6 +68,14 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 	const act = async (kind: ActionKind): Promise<void> => {
 		const view = selected();
 		if (!view) return;
+		// GUI 会话走窗口分支:smart/focus 都聚焦窗口,attach 没有终端可接管,copy 复制的是说明
+		if (view.kind === "gui") {
+			if (kind === "attach") deps.notify(guiNoTerminalMessage(view.tool));
+			else if (kind === "copy") deps.notify((await (deps.copySessionInfo ?? realCopySessionInfo)(view)).detail);
+			else deps.notify((await (deps.focusApp ?? realFocusApp)(view.tool)).detail);
+			deps.redraw();
+			return;
+		}
 		if (kind === "attach") return attach(view);
 		if (kind === "copy") {
 			deps.notify((await copyResumeCommand(view)).detail);
