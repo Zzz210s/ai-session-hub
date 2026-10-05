@@ -23,6 +23,9 @@ import { dirname, join } from "node:path";
 /** 默认 6 小时:一个工作日大约查 1-2 次,同时把"最多落后 6 小时"作为代价摊平 */
 export const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 
+/** TTL 上限 30 天:环境变量写错(例如多敲几个 9)时不至于"永久不再更新" */
+export const MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** 状态文件格式版本(改结构时递增,老文件按未命中处理 —— 与扫描缓存同一套纪律) */
 export const STATE_FORMAT_VERSION = 1;
 
@@ -43,7 +46,8 @@ export function parseTtl(raw: string | undefined, fallback: number = DEFAULT_TTL
 	if (!Number.isFinite(value) || value < 0) return fallback;
 	const unit = match[2];
 	const scale = unit === "s" ? 1_000 : unit === "m" ? 60_000 : unit === "h" ? 3_600_000 : unit === "d" ? 86_400_000 : 1;
-	return value * scale;
+	// 上限 30 天:写错一个巨大的值就等于"以后再也不更新了",这是危险侧
+	return Math.min(value * scale, MAX_TTL_MS);
 }
 
 export function stateFilePath(env: NodeJS.ProcessEnv = process.env): string {

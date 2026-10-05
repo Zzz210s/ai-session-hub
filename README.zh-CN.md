@@ -94,7 +94,7 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 | 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **尽力而为**:只给装了的排步骤,失败不拦住启动 |
 
 - **GUI 应用只探测版本(仅 Windows)**:Zed 与 DeepSeek Harness 是自带更新器的桌面应用,ais 只报告它们的版本、不代管升级(版本探测读 Windows 卸载注册表,其它平台不报版本);若装了 `@deepseek-ai/dsh` 全局 CLI,才把它作为尽力而为的一步排进更新(摘要里说明跳过还是更新)
-- **不做版本比对,但带 6 小时 TTL**:上次**全部步骤成功**的时间戳记在 `~/.ai-session-hub/preflight-state.json`;TTL 内整段跳过(只打印一行 `3.2 小时前检查过,跳过`),过期才完整跑一遍。**不比对版本**(跨安装方式易碎),只读时间戳。实测:完整一遍 13.9s,跳过 53ms。想每次都查:`AIS_UPDATE_TTL=0`;也接受 `30m` / `2h` / `1d` / 纯毫秒(默认 `6h`)。任何一步失败都不写时间戳,下次启动立刻重试
+- **不做版本比对,但带 6 小时 TTL**:上次**全部步骤成功**的时间戳记在 `~/.ai-session-hub/preflight-state.json`;TTL 内整段跳过(只打印一行 `3.2 小时前检查过,跳过`),过期才完整跑一遍。**不比对版本**(跨安装方式易碎),只读时间戳。实测:完整一遍 10-14s,跳过约 0.16s(其中跳过本身 1ms,其余是 Node 启动)。想每次都查:`AIS_UPDATE_TTL=0`;也接受 `30m` / `2h` / `1d` / 纯毫秒(默认 `6h`)。任何一步失败都不写时间戳,下次启动立刻重试
 - **独立程序**:只动 CLI 与它们的插件 —— 不 `git pull` 别人的仓库,也不跑别人的 `setup.sh`(由 `test/standalone.test.js` 固化)
 - **跳过**:`ais --no-update` 或 `AIS_NO_UPDATE=1 ais`
 - **不阻断**:任何一步失败只写进摘要,会话照常启动,例如 `[ais] 启动前自更新: 3/4 步完成,失败: 更新 pi 扩展`

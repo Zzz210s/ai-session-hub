@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
 	DEFAULT_TTL_MS,
+	MAX_TTL_MS,
 	formatAge,
 	parseTtl,
 	readPreflightState,
@@ -34,6 +35,11 @@ test("parseTtl:纯毫秒、带单位后缀、0、非法值", () => {
 test("parseTtl:fallback 可注入", () => {
 	assert.equal(parseTtl(undefined, 1234), 1234);
 	assert.equal(parseTtl("nonsense", 1234), 1234);
+});
+
+test("parseTtl:超大值被夹到 30 天上限(写错等于以后再也不更新,那是危险侧)", () => {
+	assert.equal(parseTtl("99999999999999999999d"), MAX_TTL_MS);
+	assert.equal(parseTtl(String(Number.MAX_SAFE_INTEGER)), MAX_TTL_MS);
 });
 
 test("skipReason:TTL 内跳过、过期不跳、无记录不跳、ttl=0 不跳", () => {
