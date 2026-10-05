@@ -127,7 +127,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `r` | refresh now |
 | `q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
 
-GUI sessions (Zed / DeepSeek Harness) use a different key set — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
+GUI sessions (Zed / DeepSeek Harness) have some keys that differ — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
 
 ## Deleting a session
 
@@ -313,17 +313,17 @@ Zed and DeepSeek Harness are desktop apps whose sessions never live in a termina
 | `Enter` / `f` | focus the app window (there is no terminal to hand over) |
 | `c` | copy the session info — where to look it up in the app, **not** a resume command |
 | `a` | says plainly that a GUI app has no terminal to hand over |
-| `d` | delete — **DeepSeek Harness only**; Zed is refused (its thread store is SQLite, deleting rows risks corrupting it) |
+| `d` | delete — **DeepSeek Harness only**; Zed is refused (its thread store is SQLite, where deleting rows risks corrupting it). ais does this on its own side by moving the session directory and its metadata entry to the trash |
 
 **Limits**:
 
-- Neither app offers a way to open one specific session, so ais cannot bring a session forward, and there is no terminal to hand over to (a desktop app has no command-line resume entry point)
+- ais **can** bring the app window to the foreground (focus), but it **cannot** open one specific session inside the app — there is no deep link, so pick the session by title in the app's own session list; there is also no terminal to hand over to (a desktop app has no command-line resume entry point)
 - **Zed threads cannot be deleted from ais** — the store is SQLite and deleting rows risks corrupting the app's data; delete them inside Zed
-- **DeepSeek Harness sessions can be deleted**: ais moves both the session directory and its `session_projcache` metadata entry to the trash together (a single path pair, not a database row)
+- **DeepSeek Harness sessions can be deleted by ais** (ais side only): ais moves the session directory and its `session_projcache` metadata entry to the trash together — one path pair, not a database row — so they can be restored by moving them back
 
 ## Scope & limits
 
-- **Covered**: pi (name/topic/status/focus/attach/panes), Claude Code (summary/topic/attach/panes), opencode (list/attach/panes), Zed (thread metadata, read-only), DeepSeek Harness (session metadata, read-only, deletable)
+- **Covered**: pi (name/topic/status/focus/attach/panes), Claude Code (summary/topic/attach/panes), opencode (list/attach/panes), Zed (thread metadata, read-only), DeepSeek Harness (session metadata; ais can move a session's directory and metadata entry to the trash)
 - **Not covered**: Gemini/Antigravity, cross-machine
 - **Limits**: both GUI apps are metadata-only and a specific session cannot be opened inside them (see above); without heartbeats, tab matching relies on the session name; `psutil.open_files()` is avoided (unreliable on Windows); Claude's `~/.claude/ide/*.lock` is never read (it contains authToken)
 

@@ -122,7 +122,7 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 | `r` | 手动刷新 |
 | `q` / `Esc` / `Ctrl+C` | 退出(退出时打印原因,如 `已退出(q)`) |
 
-GUI 会话(Zed / DeepSeek Harness)的键位与上面不同——见下文「GUI 会话」。
+GUI 会话(Zed / DeepSeek Harness)有部分键位不同——见下文「GUI 会话」。
 
 ## 删除会话
 
@@ -290,17 +290,17 @@ Zed 与 DeepSeek Harness 是桌面应用,会话不在终端里,但它们的元�
 | `Enter` / `f` | 聚焦应用窗口(没有终端可接管) |
 | `c` | 复制会话信息(在应用里的查找线索,**不是**恢复命令) |
 | `a` | 明确提示 GUI 应用没有终端可接管 |
-| `d` | 删除 —— **仅 DeepSeek Harness 可用**;Zed 会被拒绝(线程存于 SQLite,按行删有损坏应用数据的风险) |
+| `d` | 删除 —— **仅 DeepSeek Harness 可用**;Zed 会被拒绝(线程存于 SQLite,按行删有损坏应用数据的风险)。ais 在自身侧把会话目录与元数据条目一并移入回收站 |
 
 **限制**:
 
-- 两者都没有「打开指定会话」的入口,ais 无法把某条会话带回前台,也没有「接管终端」(桌面应用没有命令行恢复入口)
+- ais **能**把应用窗口切到前台(聚焦),但**不能**在应用内打开指定的那一条会话 —— 没有 deep link,要在应用自己的会话列表里按标题找;也没有「接管终端」(桌面应用没有命令行恢复入口)
 - **Zed 的线程不能在 ais 里删除** —— 它的存储是 SQLite,按行删有损坏应用数据的风险,请到 Zed 内删
-- **DeepSeek Harness 的会话可以删**:ais 把会话目录与 `session_projcache` 里的元数据条目一并移入回收站(移的是两个路径,不是数据库行)
+- **DeepSeek Harness 的会话可由 ais 删除**(仅 ais 侧机制):ais 把会话目录与 `session_projcache` 里的元数据条目一并移入回收站 —— 移的是两个路径,不是数据库行 —— 可移回原处还原
 
 ## 覆盖与边界
 
-- **已覆盖**:pi(名称/主题/状态/精确聚焦/attach)、Claude Code(摘要/话题/attach `--resume`)、opencode(会话列表 + attach + 分屏)、Zed(线程元数据只读)、DeepSeek Harness(会话元数据只读,可删除)
+- **已覆盖**:pi(名称/主题/状态/精确聚焦/attach/分屏)、Claude Code(摘要/话题/attach/分屏)、opencode(会话列表/attach/分屏)、Zed(线程元数据只读)、DeepSeek Harness(会话元数据只读;ais 可把会话目录与元数据条目移入回收站)
 - **未覆盖**:Gemini/Antigravity、跨机器
 - **限制**:两个 GUI 应用都只读元数据、无法在应用内打开指定会话(见上节);无心跳时标签匹配依赖会话名;不用 `psutil.open_files()` 判定归属(Windows 上不可靠);不读取 Claude 的 `~/.claude/ide/*.lock`(含 authToken)
 
