@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { appVersionSummary, hasGlobalDshCli, planDshCliStep, readAppVersions, type DshCliStatus } from "./apps.ts";
 import { execRunner, preflight, type Runner, type Step } from "./preflight.ts";
+import { parseTtl, readPreflightState, skipReason, stateFilePath, writePreflightState } from "./preflight-ttl.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 const PATH_SEP = IS_WINDOWS ? ";" : ":";
@@ -167,9 +168,14 @@ export function formatDuration(ms: number): string {
 export async function startPreflight(options: StartOptions = {}): Promise<string | undefined> {
 	try {
 		if (options.disabled || process.env.AIS_NO_UPDATE === "1") return undefined;
+		const statePath = stateFilePath();
+		const skip = skipReason(readPreflightState(statePath), Date.now(), parseTtl(process.env.AIS_UPDATE_TTL));
+		if (skip) return "[ais] 启动前自更新: " + skip;
 		const shell = resolvePreflightShell();
 		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: shell });
 		if (steps.length === 0) return undefined;
+		// GUI 应用版本只用于摘要行,和更新步骤并行读(实测串行时白等 1.1s)
+		const versionsPromise = readAppVersions({ shell });
 		const dsh = await planDshCliSteps(execRunner, isInstalled("npm"), shell);
 		steps.push(...dsh.steps);
 		const say = options.onProgress ?? ((message: string) => process.stdout.write("[ais] " + message + "\n"));
@@ -181,7 +187,9 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 				say(ok ? `${label} 完成(${formatDuration(ms)})` : `${label} 失败(${formatDuration(ms)})${detail ? ": " + detail : ""}`),
 		});
 		const failed = result.steps.filter((step) => !step.ok);
-		const versions = await readAppVersions({ shell });
+		// 只在全部成功时记时间:任何一步失败都不写,下次启动立刻重试
+		if (failed.length === 0) writePreflightState(statePath);
+		const versions = await versionsPromise;
 		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions, dsh.status);
 	} catch (error) {
 		return "[ais] 自更新跳过(" + (error instanceof Error ? error.message : String(error)) + ")";
