@@ -11,7 +11,7 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import type { LiveProcess, LiveSnapshot } from "../model.ts";
+import type { LiveApp, LiveProcess, LiveSnapshot } from "../model.ts";
 import { classifyProcess } from "./classify.ts";
 
 export interface PsRow {
@@ -79,15 +79,40 @@ export async function hasCommand(name: string): Promise<boolean> {
 	return result.ok;
 }
 
+/**
+ * 解析 `wmctrl -l -p` 输出(纯函数):`0xID PID host 窗口标题`。
+ * 标题里认 zed / DeepSeek Harness —— 与 Windows 侧同样只关心这两个 GUI。
+ */
+export function parseWmctrlOutput(text: string): LiveApp[] {
+	const apps: LiveApp[] = [];
+	for (const line of text.split(/\r?\n/)) {
+		const match = /^(0x[0-9a-f]+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line.trim());
+		if (!match) continue;
+		const [, hwnd, pid, , title] = match;
+		const tool = /zed/i.test(title) ? "zed" : /deepseek harness/i.test(title) ? "dsh" : undefined;
+		if (tool) apps.push({ tool, pid: Number(pid), hwnd, title });
+	}
+	return apps;
+}
+
+/** X11:用 wmctrl 列 GUI 窗口;Wayland 通常没有 wmctrl → 空数组(降级为"只列会话不聚焦") */
+export async function listGuiWindowsLinux(): Promise<LiveApp[]> {
+	if (!(await hasCommand("wmctrl"))) return [];
+	const listed = await run("wmctrl", ["-l", "-p"]);
+	if (!listed.ok) return [];
+	return parseWmctrlOutput(listed.out);
+}
+
 export async function probeLiveLinux(): Promise<LiveSnapshot> {
+	const apps = await listGuiWindowsLinux();
 	const result = await run("ps", ["-eo", "pid=,ppid=,etimes=,tty=,args="]);
 	if (!result.ok) {
-		return { processes: [], tabs: [], consoleWindows: [], error: result.error ?? "ps 执行失败" };
+		return { processes: [], tabs: [], consoleWindows: [], apps, error: result.error ?? "ps 执行失败" };
 	}
 	try {
-		return { processes: classifyPsRows(parsePsOutput(result.out)), tabs: [], consoleWindows: [] };
+		return { processes: classifyPsRows(parsePsOutput(result.out)), tabs: [], consoleWindows: [], apps };
 	} catch (error) {
-		return { processes: [], tabs: [], consoleWindows: [], error: error instanceof Error ? error.message : String(error) };
+		return { processes: [], tabs: [], consoleWindows: [], apps, error: error instanceof Error ? error.message : String(error) };
 	}
 }
 

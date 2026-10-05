@@ -20,7 +20,7 @@ param(
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $ErrorActionPreference = "Continue"
 
-$result = [ordered]@{ processes = @(); tabs = @(); consoleWindows = @() }
+$result = [ordered]@{ processes = @(); tabs = @(); consoleWindows = @(); guiWindows = @() }
 
 Add-Type @"
 using System;
@@ -36,6 +36,13 @@ public class AisConsole {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 }
 "@
+
+# Top-level GUI app windows (Zed / DeepSeek Harness) - recorded so the UI can focus
+# them by handle. Lives in a helper script: this one is already near the line limit.
+# Add-Type must run before the UIA reflection below (see note at the top).
+if (-not $TabsOnly) {
+  try { $result.guiWindows = @(& (Join-Path $PSScriptRoot "gui-windows.ps1")) } catch { $result.guiWindows = @() }
+}
 
 function Get-UiaTypes {
   # Load UIAutomation and resolve the types we need (reflection avoids the

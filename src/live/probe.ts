@@ -69,7 +69,7 @@ export async function probeLive(options: LiveProbeOptions = {}): Promise<LiveSna
 	// 连缓存都没有:界面路径可以选择不等(先渲染"暂无实况",后台探测完下一次刷新就是真的)
 	if (options.neverBlock) {
 		refreshInBackground(path, ttlMs, run);
-		return { processes: [], tabs: [], consoleWindows: [], stale: true };
+		return { processes: [], tabs: [], consoleWindows: [], apps: [], stale: true };
 	}
 	const fresh = await run();
 	// 等写盘完成:短命进程(ais list)否则可能在退出前丢掉缓存,导致下次又要全量探测

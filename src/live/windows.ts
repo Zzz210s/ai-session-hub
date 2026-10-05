@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { cacheDir, readCache, ttlFromEnv, writeCache } from "../cache.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ConsoleWindow, LiveProcess, TerminalTab, Tool } from "../model.ts";
+import type { ConsoleWindow, LiveApp, LiveProcess, TerminalTab } from "../model.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(here, "..", "..", "scripts", "windows.ps1");
@@ -18,6 +18,8 @@ export interface LiveSnapshot {
 	tabs: TerminalTab[];
 	/** 非 Windows Terminal 的控制台窗口(conhost / PowerShell 控制台) */
 	consoleWindows: ConsoleWindow[];
+	/** 正在运行的 GUI 应用实例(zed / dsh);只有窗口、不承载单条会话 */
+	apps?: LiveApp[];
 	error?: string;
 	/** 这份快照来自过期缓存(已在后台刷新) —— 界面可先拿它渲染 */
 	stale?: boolean;
@@ -53,10 +55,10 @@ export function findPwsh(env: NodeJS.ProcessEnv = process.env, fileExists: (p: s
 	}
 	return undefined;
 }
-// 进程判定是跳平台共用的,放在 classify.ts;这里导入供本模块使用,并原样再导出
+// 进程判定在 classify.ts、GUI 窗口解析在 gui.ts,两者都从这里再导出
 import { classifyProcess } from "./classify.ts";
-
-export { classifyProcess };
+import { parseGuiWindows } from "./gui.ts";
+export { classifyProcess, parseGuiWindows };
 
 let engine: string | null = null;
 
@@ -124,13 +126,20 @@ interface RawTab {
 	selected: boolean;
 }
 
+interface RawGuiWindow {
+	hwnd: string;
+	pid: number;
+	process: string;
+	title: string;
+}
+
 export async function probeLiveUncached(): Promise<LiveSnapshot> {
-	let raw: { processes?: RawProcess[]; tabs?: RawTab[]; consoleWindows?: RawConsoleWindow[] };
+	let raw: { processes?: RawProcess[]; tabs?: RawTab[]; consoleWindows?: RawConsoleWindow[]; guiWindows?: RawGuiWindow[] };
 	try {
 		const stdout = await runPowerShell(SCRIPT, []);
 		raw = JSON.parse(stdout.trim() || "{}") as typeof raw;
 	} catch (error) {
-		return { processes: [], tabs: [], consoleWindows: [], error: error instanceof Error ? error.message : String(error) };
+		return { processes: [], tabs: [], consoleWindows: [], apps: [], error: error instanceof Error ? error.message : String(error) };
 	}
 
 	const processes: LiveProcess[] = [];
@@ -160,7 +169,9 @@ export async function probeLiveUncached(): Promise<LiveSnapshot> {
 		.filter((entry) => entry && entry.hwnd && entry.pid)
 		.map((entry) => ({ hwnd: String(entry.hwnd), pid: Number(entry.pid), title: entry.title ?? "" }));
 
-	return { processes, tabs, consoleWindows };
+	const apps = parseGuiWindows(raw.guiWindows);
+
+	return { processes, tabs, consoleWindows, apps };
 }
 
 /** 直接聚焦某个窗口句柄(控制台窗口场景) */
