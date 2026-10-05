@@ -5,9 +5,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { existsSync, unlinkSync } from "node:fs";
-import { clipboardPlan, runClipboardPlan, writeClipboard } from "../src/clipboard.ts";
+import { clipboardPlan, copyToClipboard, runClipboardPlan, writeClipboard } from "../src/clipboard.ts";
 
 const WIN = process.platform === "win32";
+
+/** 从计划脚本里取回临时文件路径(超长文本分支) */
+function tempPathOf(plan) {
+	const matched = plan.args.join(" ").match(/'([^']*ais-clipboard-[^']*\.txt)'/);
+	return matched?.[1];
+}
 
 test("clipboardPlan:Windows 用 PowerShell 内联 base64,不把文本喂给 clip.exe", () => {
 	const text = "测试ABC123 · 中文路径 F:\\0-Note";
@@ -100,4 +106,57 @@ test("runClipboardPlan:命令缺失时按 fallback 回退,并如实说明可能�
 	});
 	assert.equal(result.ok, true);
 	assert.match(result.detail, /回退/);
+});
+
+test("runClipboardPlan:用户文本含 ENOENT 时不误触发回退(只认失败描述首行)", async () => {
+	const [okClip, okArgs] = WIN ? ["cmd.exe", ["/c", "more"]] : ["cat", []];
+	const userText = "ENOENT 只是用户文本,不是命令缺失";
+	const result = await runClipboardPlan({
+		clip: process.execPath,
+		args: ["-e", "process.exit(3)"],
+		stdin: "",
+		text: userText,
+		fallback: { clip: okClip, args: okArgs, stdin: userText, text: userText },
+	});
+	assert.equal(result.ok, false, "真失败要如实返回失败,不能拿用户文本里的 ENOENT 去回退");
+	assert.match(result.detail, /复制失败/);
+});
+
+test("runClipboardPlan:失败路径在 Node 侧删除临时文件(不依赖 PowerShell 的 Remove-Item)", async () => {
+	const plan = clipboardPlan("x".repeat(5000), {}, "win32");
+	const path = tempPathOf(plan);
+	assert.ok(path && existsSync(path), "计划生成时应已落盘");
+	const result = await runClipboardPlan({ ...plan, clip: "definitely-not-a-command-xyz", args: [], stdin: "", fallback: undefined });
+	assert.equal(result.ok, false);
+	assert.ok(!existsSync(path), "失败后不应残留临时文件");
+});
+
+test("runClipboardPlan:成功路径也删除临时文件", async () => {
+	const plan = clipboardPlan("x".repeat(5000), {}, "win32");
+	const path = tempPathOf(plan);
+	const result = await runClipboardPlan({ ...plan, clip: process.execPath, args: ["-e", ""], stdin: "", fallback: undefined });
+	assert.equal(result.ok, true);
+	assert.ok(!existsSync(path), "成功后不应残留临时文件");
+});
+
+test("clipboardPlan:同毫秒两次调用生成不同临时文件(随机后缀,不会互相覆盖)", () => {
+	const first = tempPathOf(clipboardPlan("x".repeat(5000), {}, "win32"));
+	const second = tempPathOf(clipboardPlan("x".repeat(5000), {}, "win32"));
+	assert.ok(first && second);
+	assert.notEqual(first, second);
+	unlinkSync(first);
+	unlinkSync(second);
+});
+
+test("copyToClipboard:临时文件写失败时返回 {ok:false} 而不把异常抛给调用方", async () => {
+	const result = await copyToClipboard("x".repeat(5000), {
+		platform: "win32",
+		env: {},
+		writeTemp: () => {
+			throw new Error("EACCES: 目录不可写");
+		},
+	});
+	assert.equal(result.ok, false);
+	assert.match(result.detail, /复制失败/);
+	assert.match(result.detail, /可手动复制/);
 });

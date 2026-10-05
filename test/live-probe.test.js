@@ -48,11 +48,12 @@ test("probeLive:过期缓存 + allowStale → 立刻返回旧快照并标记 sta
 		ttlMs: 1000,
 		staleMs: 10 * 60_000,
 		allowStale: true,
-		probe: async () => (await sleep(120), snapshot("fresh")),
+		probe: async () => (await sleep(800), snapshot("fresh")),
 	});
 	assert.equal(result.mark, "stale", "应返回旧快照");
 	assert.equal(result.stale, true, "应标记为过期");
-	assert.ok(Date.now() - started < 100, "不该等待探测完成");
+	// 忙时调度抖动大,阈值放到 400ms(注入探针睡 800ms:真等探测就不可能通过)
+	assert.ok(Date.now() - started < 400, "不该等待探测完成");
 	assert.ok(await waitFor(() => ageOf(path) > started), "后台刷新应把新快照写进缓存");
 });
 

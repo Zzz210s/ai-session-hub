@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { describeFocusFailure, focusApp } from "./gui-actions.ts";
 import { focusTab, focusWindow } from "./live/windows.ts";
 import { focusWindowLinux, openInNewTerminal } from "./live/linux-focus.ts";
 import { resolveShell, shellArgs } from "./shell.ts";
@@ -97,6 +98,8 @@ export interface ActionResult {
 
 /** 聚焦该会话已运行的终端窗口 */
 export async function focusSession(view: SessionView): Promise<ActionResult> {
+	// GUI 会话(zed/dsh)没有终端窗口,直接聚焦应用窗口;否则会回“没有可定位的终端窗口”这种误导文案
+	if (view.kind === "gui") return focusApp(view.tool);
 	if (!IS_WINDOWS) {
 		// Linux:按会话名找窗口(wmctrl / xdotool),名字来自 /name 或心跳
 		const needle = view.name?.trim() || view.topic?.trim() || "";
@@ -107,13 +110,13 @@ export async function focusSession(view: SessionView): Promise<ActionResult> {
 	if (tab) {
 		if (tab.index < 0) return { ok: false, detail: "该窗口未枚举到标签页" };
 		const result = await focusTab(tab);
-		return { ok: result.ok, detail: result.ok ? `已聚焦窗口 pid ${tab.windowPid} 的第 ${tab.index + 1} 个标签` : `聚焦失败: ${result.detail}` };
+		return { ok: result.ok, detail: result.ok ? `已聚焦窗口 pid ${tab.windowPid} 的第 ${tab.index + 1} 个标签` : describeFocusFailure(view.tool, result.detail) };
 	}
 	// 非 Windows Terminal:按控制台窗口句柄聚焦(conhost / Windows PowerShell 控制台)
 	const consoleWindow = view.live?.console;
 	if (consoleWindow) {
 		const result = await focusWindow(consoleWindow.hwnd);
-		return { ok: result.ok, detail: result.ok ? `已聚焦控制台窗口(pid ${consoleWindow.pid})` : `聚焦失败: ${result.detail}` };
+		return { ok: result.ok, detail: result.ok ? `已聚焦控制台窗口(pid ${consoleWindow.pid})` : describeFocusFailure(view.tool, result.detail) };
 	}
 	return { ok: false, detail: "该会话没有可定位的终端窗口(未运行或标题不匹配)" };
 }
@@ -153,7 +156,7 @@ export function resumeInNewTab(view: SessionView): ActionResult {
 }
 
 /** 复制恢复命令到系统剪贴板(行为与文案不变,剪贴板写入见 clipboard.ts) */
-export function copyResumeCommand(view: SessionView): ActionResult {
+export async function copyResumeCommand(view: SessionView): Promise<ActionResult> {
 	const command = resumeCommand(view);
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool}` };
 	return copyToClipboard(command);
