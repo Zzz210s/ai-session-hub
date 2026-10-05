@@ -5,7 +5,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseGuiWindows } from "../src/live/windows.ts";
-import { parseWmctrlOutput } from "../src/live/linux.ts";
 
 test("parseGuiWindows:按进程名认出 zed/dsh,过滤空标题与其它进程", () => {
 	const apps = parseGuiWindows([
@@ -36,23 +35,18 @@ test("parseGuiWindows:64 位高地址句柄保留十六进制,不溢出成负数
 	assert.equal(app.hwnd, "0x7ffd00001234");
 });
 
-test("parseWmctrlOutput:按标题认出 zed/dsh,忽略其它窗口", () => {
-	const out = [
-		"0x03400007  12345  host  proj - Zed",
-		"0x0360000a  23456  host  config-ai - DeepSeek Harness",
-		"0x0380000b  34567  host  Terminal",
-		"",
-	].join("\n");
+test("parseGuiWindows:同一 pid 的多个窗口按 pid 去重,保留标题非空的第一条", () => {
+	const apps = parseGuiWindows([
+		{ hwnd: "0x1", pid: 100, process: "zed.exe", title: "" },
+		{ hwnd: "0x2", pid: 100, process: "zed.exe", title: "a - Zed" },
+		{ hwnd: "0x3", pid: 100, process: "zed.exe", title: "b - Zed" },
+		{ hwnd: "0x4", pid: 200, process: "zed.exe", title: "c - Zed" },
+	]);
 	assert.deepEqual(
-		parseWmctrlOutput(out).map((a) => [a.tool, a.pid, a.hwnd]),
+		apps.map((a) => [a.hwnd, a.pid]),
 		[
-			["zed", 12345, "0x03400007"],
-			["dsh", 23456, "0x0360000a"],
+			["0x2", 100],
+			["0x4", 200],
 		],
 	);
-});
-
-test("parseWmctrlOutput:空输出与乱行返回空数组", () => {
-	assert.deepEqual(parseWmctrlOutput(""), []);
-	assert.deepEqual(parseWmctrlOutput("garbage\n"), []);
 });

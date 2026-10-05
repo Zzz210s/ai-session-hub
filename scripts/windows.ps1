@@ -40,7 +40,9 @@ public class AisConsole {
 # Top-level GUI app windows (Zed / DeepSeek Harness) - recorded so the UI can focus
 # them by handle. Lives in a helper script: this one is already near the line limit.
 # Add-Type must run before the UIA reflection below (see note at the top).
-if (-not $TabsOnly) {
+# ProcessesOnly skips this: it is a pure process probe and would otherwise pay for a
+# full EnumWindows pass it does not use.
+if (-not $TabsOnly -and -not $ProcessesOnly) {
   try { $result.guiWindows = @(& (Join-Path $PSScriptRoot "gui-windows.ps1")) } catch { $result.guiWindows = @() }
 }
 

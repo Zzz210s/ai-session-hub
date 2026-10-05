@@ -3,7 +3,8 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyPsRows, parsePsOutput } from "../src/live/linux.ts";
+import { classifyPsRows, matchWmctrlApps, parsePsOutput, parseWmctrlOutput } from "../src/live/linux.ts";
+import { toolFromProcessName } from "../src/live/gui.ts";
 import { classifyProcess } from "../src/live/classify.ts";
 
 const PS_SAMPLE = `  101     1    3600 pts/3    /usr/bin/node /home/u/.local/share/pnpm/global/5/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --session a.jsonl
@@ -55,4 +56,55 @@ test("classifyProcess:与 Windows 侧共用同一套判定", () => {
 	assert.equal(classifyProcess("/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js")?.tool, "claude");
 	assert.equal(classifyProcess("/usr/bin/opencode")?.tool, "opencode");
 	assert.equal(classifyProcess("/usr/bin/vim"), null);
+});
+
+// 真实 `wmctrl -l -p` 是五列:<hwnd> <桌面号> <pid> <client machine> <窗口标题>。
+// 第 2 列是桌面号(sticky 窗口为 -1),pid 在第 3 列;标题里没有主机名。
+const WMCTRL_SAMPLE = [
+	"0x03400007  0 12345 myhost proj - Zed",
+	"0x0360000a -1 23456 myhost config-ai - DeepSeek Harness",
+	"0x0380000b  0 34567 myhost Terminal",
+	"",
+].join("\n");
+
+test("parseWmctrlOutput:五列格式,pid 取第 3 列、标题不含主机名,sticky 行(-1)也解析", () => {
+	assert.deepEqual(parseWmctrlOutput(WMCTRL_SAMPLE), [
+		{ hwnd: "0x03400007", pid: 12345, title: "proj - Zed" },
+		{ hwnd: "0x0360000a", pid: 23456, title: "config-ai - DeepSeek Harness" },
+		{ hwnd: "0x0380000b", pid: 34567, title: "Terminal" },
+	]);
+});
+
+test("parseWmctrlOutput:空输出与乱行返回空数组", () => {
+	assert.deepEqual(parseWmctrlOutput(""), []);
+	assert.deepEqual(parseWmctrlOutput("garbage\n"), []);
+});
+
+test("matchWmctrlApps:按进程名(不是标题)判定,标题是 23652 也能认出 Zed", async () => {
+	const windows = parseWmctrlOutput(
+		"0x1 0 111 myhost 23652\n0x2 0 222 myhost 随便一个窗口\n0x3 0 333 myhost config-ai - DeepSeek Harness",
+	);
+	const names = { 111: "zed", 222: "explorer", 333: "deepseek-harness" };
+	const apps = await matchWmctrlApps(windows, (pid) => names[pid]);
+	assert.deepEqual(
+		apps.map((a) => [a.tool, a.pid, a.title]),
+		[
+			["zed", 111, "23652"],
+			["dsh", 333, "config-ai - DeepSeek Harness"],
+		],
+	);
+});
+
+test("matchWmctrlApps:同一 pid 的多个窗口按 pid 去重,只留第一条", async () => {
+	const windows = parseWmctrlOutput("0x1 0 111 host a - Zed\n0x2 0 111 host b - Zed");
+	const apps = await matchWmctrlApps(windows, () => "zed");
+	assert.deepEqual(apps.map((a) => a.hwnd), ["0x1"]);
+});
+
+test("toolFromProcessName:宽松识别 zed / DeepSeek Harness 的常见 comm 形态", () => {
+	assert.equal(toolFromProcessName("zed"), "zed");
+	assert.equal(toolFromProcessName("ZED"), "zed");
+	assert.equal(toolFromProcessName("DeepSeek Harness"), "dsh");
+	assert.equal(toolFromProcessName("deepseek-harness"), "dsh");
+	assert.equal(toolFromProcessName("explorer"), undefined);
 });

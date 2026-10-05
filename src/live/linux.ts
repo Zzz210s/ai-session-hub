@@ -11,8 +11,10 @@
  */
 
 import { execFile, spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import type { LiveApp, LiveProcess, LiveSnapshot } from "../model.ts";
 import { classifyProcess } from "./classify.ts";
+import { matchGuiWindows, type GuiWindow, type ProcessNameLookup } from "./gui.ts";
 
 export interface PsRow {
 	pid: number;
@@ -80,19 +82,38 @@ export async function hasCommand(name: string): Promise<boolean> {
 }
 
 /**
- * 解析 `wmctrl -l -p` 输出(纯函数):`0xID PID host 窗口标题`。
- * 标题里认 zed / DeepSeek Harness —— 与 Windows 侧同样只关心这两个 GUI。
+ * 解析 `wmctrl -l -p` 输出(纯函数)。真实格式是五列:
+ *   <hwnd> <桌面号> <pid> <client machine> <窗口标题>
+ * 第 2 列是桌面号(sticky 窗口为 -1),pid 在第 3 列;标题里不含主机名。
+ * 判定应用不靠标题(见 matchWmctrlApps),这里只负责切列,标题仅作展示。
  */
-export function parseWmctrlOutput(text: string): LiveApp[] {
-	const apps: LiveApp[] = [];
+export function parseWmctrlOutput(text: string): GuiWindow[] {
+	const windows: GuiWindow[] = [];
 	for (const line of text.split(/\r?\n/)) {
-		const match = /^(0x[0-9a-f]+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line.trim());
+		const match = /^(0x[0-9a-f]+)\s+(-?\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line.trim());
 		if (!match) continue;
-		const [, hwnd, pid, , title] = match;
-		const tool = /zed/i.test(title) ? "zed" : /deepseek harness/i.test(title) ? "dsh" : undefined;
-		if (tool) apps.push({ tool, pid: Number(pid), hwnd, title });
+		windows.push({ hwnd: match[1] ?? "", pid: Number(match[3]), title: match[5] ?? "" });
 	}
-	return apps;
+	return windows;
+}
+
+/** 默认查进程名:先读 /proc/<pid>/comm(最可靠),读不到再退回 ps(Non-Linux 或进程已退出) */
+export async function lookupProcessName(pid: number): Promise<string | undefined> {
+	if (!Number.isFinite(pid) || pid <= 0) return undefined;
+	try {
+		const name = (await readFile(`/proc/${pid}/comm`, "utf8")).trim();
+		if (name) return name;
+	} catch {
+		// 没有 /proc(非 Linux)或进程已退出:退回 ps
+	}
+	const result = await run("ps", ["-p", String(pid), "-o", "comm="]);
+	const name = result.out.trim();
+	return result.ok && name ? name : undefined;
+}
+
+/** 窗口行 + 可注入的进程名查询 → LiveApp[](pid → 进程名,标题只用于展示) */
+export function matchWmctrlApps(windows: GuiWindow[], lookup: ProcessNameLookup = lookupProcessName): Promise<LiveApp[]> {
+	return matchGuiWindows(windows, lookup);
 }
 
 /** X11:用 wmctrl 列 GUI 窗口;Wayland 通常没有 wmctrl → 空数组(降级为"只列会话不聚焦") */
@@ -100,7 +121,7 @@ export async function listGuiWindowsLinux(): Promise<LiveApp[]> {
 	if (!(await hasCommand("wmctrl"))) return [];
 	const listed = await run("wmctrl", ["-l", "-p"]);
 	if (!listed.ok) return [];
-	return parseWmctrlOutput(listed.out);
+	return matchWmctrlApps(parseWmctrlOutput(listed.out));
 }
 
 export async function probeLiveLinux(): Promise<LiveSnapshot> {
