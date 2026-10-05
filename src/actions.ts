@@ -3,7 +3,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
 import { copyToClipboard } from "./clipboard.ts";
@@ -167,14 +167,7 @@ function shellQuote(value: string): string {
 	return IS_WINDOWS ? `"${value}"` : `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-/** 智能默认动作:运行中优先聚焦,否则新窗口/新标签恢复 */
-export async function smartAction(view: SessionView): Promise<ActionResult> {
-	if (view.state === "running" && (view.live?.tab || !IS_WINDOWS)) return focusSession(view);
-	return resumeInNewTab(view);
-}
-
-/**
- * 在本进程前台接管终端运行该会话(供 TUI 的 attach 模式使用),返回退出码。
+/** 在本进程前台接管终端运行该会话(供 TUI 的 attach 模式使用),返回退出码。
  * 由本进程托管 PTY/子进程,不依赖终端自身对命令行的解析。
  */
 export function attachSession(view: SessionView): Promise<number> {

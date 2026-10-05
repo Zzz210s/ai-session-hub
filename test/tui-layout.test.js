@@ -139,6 +139,18 @@ test("rowLine:被命名的会话名用亮黄色(11),未命名不着该色", () =
 	assert.ok(!unnamed.includes("\u001b[38;5;11m"), "未命名会话名不应为亮黄");
 });
 
+test("rowLine:窄栏下会话名仍可见(GUI 标记让位)", () => {
+	const view = sampleRow({ tool: "dsh", kind: "gui", appRunning: true, name: "my-session", topic: "t" });
+	const text = stripAnsi(rowLine(view, false, 24, stateFor(120, 20)));
+	assert.ok(text.includes("my-session"), `名字应在窄栏下可见,实际: ${JSON.stringify(text)}`);
+});
+
+test("rowLine:窄栏下归档/置顶标记被舍弃,名字优先", () => {
+	const view = sampleRow({ name: "my-session", topic: "t", archived: true, pinned: true });
+	const text = stripAnsi(rowLine(view, false, 24, stateFor(120, 20)));
+	assert.ok(text.includes("my-session"), `名字应在窄栏下可见,实际: ${JSON.stringify(text)}`);
+});
+
 test("详情面板:会话名完整显示(折行,不截断)", () => {
 	const longName = "这是一个非常长的会话名用于验证详情面板会完整显示而不是被截断处理";
 	const view = sampleRow({ name: longName, named: true });

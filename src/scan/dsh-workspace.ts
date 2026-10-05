@@ -46,7 +46,11 @@ export async function readWorkspace(home: string): Promise<WorkspaceInfo> {
 		for (const ws of Object.values(workspaces)) {
 			if (typeof ws?.path !== "string" || ws.path.length === 0) continue;
 			const slug = encodeSlug(ws.path);
-			if (slug) paths.set(slug, ws.path);
+			if (!slug) continue;
+			// 编码有损:`C:\proj\a-b` 与 `C:\proj\a\b` 折叠成同一个 slug。
+			// 碰撞时保留先出现的工作区(JSON 键序稳定),不覆盖 —— 否则会话会挂到错误的项目路径。
+			if (paths.has(slug)) continue;
+			paths.set(slug, ws.path);
 		}
 		const wsId = typeof raw.global?.defaultWorkspaceId === "string" ? raw.global.defaultWorkspaceId : undefined;
 		const defaultRaw = wsId ? workspaces[wsId]?.path : undefined;

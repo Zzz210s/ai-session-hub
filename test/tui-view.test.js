@@ -128,8 +128,8 @@ test("renderScreen:归档会话带 [归档] 且名称灰显、置顶会话带 [�
 	const rows = [view({ id: "a", name: "归档的", archived: true }), view({ id: "b", name: "置顶的", pinned: true }), view({ id: "c", name: "当前的" })];
 	const lines = renderScreen(state({ rows, cursor: 2 }));
 	const text = lines.map(stripAnsi).join("\n");
-	assert.match(text, /\[归档\] 归档的/);
-	assert.match(text, /\[置顶\] 置顶的/);
+	assert.match(text, /归档的 \[归档\]/);
+	assert.match(text, /置顶的 \[置顶\]/);
 	const archivedLine = lines.find((line) => stripAnsi(line).includes("[归档]")) ?? "";
 	assert.ok(archivedLine.includes(`${DIM}归档的`), "归档会话名应灰显");
 });

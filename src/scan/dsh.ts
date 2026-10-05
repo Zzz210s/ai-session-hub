@@ -87,8 +87,10 @@ export async function scanDshSessions(home: string = dshHome()): Promise<Session
 	}
 	const seen = new Set<string>();
 	for (const slug of slugs) {
-		// 权威路径优先(清单里的 path 编码后与会话目录名精确相等),反解与默认工作区只作兜底
-		const cwd = paths.get(slug) ?? decodeSlug(slug) ?? defaultPath;
+		// 权威路径优先(清单里的 path 编码后与会话目录名精确相等),反解只在路径真实存在时采用,
+		// 否则会向详情/搜索里塞一个磁盘上不存在的编造路径;默认工作区只作最后兜底
+		const derived = decodeSlug(slug);
+		const cwd = paths.get(slug) ?? (derived && existsSync(derived) ? derived : undefined) ?? defaultPath;
 		let ids: string[] = [];
 		try {
 			ids = (await readdir(join(sessionsRoot, slug), { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);
