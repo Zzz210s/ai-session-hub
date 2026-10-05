@@ -66,7 +66,11 @@ export async function scanZedSessions(dbPath: string = zedThreadsDbPath()): Prom
 					"SELECT id, summary, updated_at, created_at, folder_paths, parent_id, length(data) AS size FROM threads ORDER BY updated_at DESC",
 				)
 				.all() as unknown as ZedRow[];
-			return rows.map((row) => {
+			// 只列顶层线程:Zed 面板本身也只列顶层,parent_id 非空的子线程(agent 派生的子会话)
+			// 在面板里是嵌套在父线程内部显示的。本机实测某父线程派生过 19 个子线程,
+			// 全部平铺出来会把面板淹没成 22 条,与用户在 Zed 里看到的 3 条对不上。
+			const topLevel = rows.filter((row) => !row.parent_id);
+			return topLevel.map((row) => {
 				const title = (row.summary ?? "").trim();
 				const created = parseZedTime(row.created_at);
 				const updated = parseZedTime(row.updated_at);

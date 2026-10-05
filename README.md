@@ -303,7 +303,7 @@ Zed and DeepSeek Harness are desktop apps whose sessions never live in a termina
 
 | App | Session store | What ais reads |
 |---|---|---|
-| Zed | `%LOCALAPPDATA%\Zed\threads\threads.db` (Linux: `~/.local/share/zed/threads/threads.db`) | thread metadata from SQLite: title, created/updated times, project (`folder_paths`), parent thread; thread bodies are zstd BLOBs and are **never decompressed** |
+| Zed | `%LOCALAPPDATA%\Zed\threads\threads.db` (Linux: `~/.local/share/zed/threads/threads.db`) | thread metadata from SQLite: title, created/updated times, project (`folder_paths`); thread bodies are zstd BLOBs and are **never decompressed**. Only **top-level threads** are listed — agent-spawned child threads (`parent_id` set) are nested inside their parent in Zed's own panel and are not listed separately |
 | DeepSeek Harness | metadata under `$DSH_HOME` (default `~/.dsh`) in `storages/session_projcache/sessions/`, plus bodies at `sessions/<project-slug>/<id>/session.v4.jsonl.zstd` | metadata: title, timestamps, project, size; bodies are **never decompressed** |
 
 **Keys** (a GUI session has no terminal, so they differ from a CLI session):

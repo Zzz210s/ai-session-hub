@@ -23,7 +23,7 @@ function cleanup(dir) {
 	rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
 
-test("scanZedSessions:标题/时间/项目/父线程/大小都映射出来", async () => {
+test("scanZedSessions:标题/时间/项目/大小都映射出来,子线程不单独列出", async () => {
 	const { dbPath, dir } = await makeDb([
 		{
 			id: "t1",
@@ -36,26 +36,38 @@ test("scanZedSessions:标题/时间/项目/父线程/大小都映射出来", asy
 		},
 		{
 			id: "t2",
-			summary: "子线程",
+			summary: "顶层多根工作区",
 			updated_at: "2026-09-03T12:57:00.000000000+00:00",
 			created_at: "2026-09-03T12:56:00.000000000+00:00",
 			folder_paths: '["C:\\\\a","C:\\\\b"]',
+			parent_id: null,
+			bytes: 5,
+		},
+		{
+			id: "t3",
+			summary: "agent 派生的子线程",
+			updated_at: "2026-09-03T12:58:00.000000000+00:00",
+			created_at: "2026-09-03T12:57:30.000000000+00:00",
+			folder_paths: "C:\\Users\\23652",
 			parent_id: "t1",
 			bytes: 5,
 		},
 	]);
 	try {
 		const rows = await scanZedSessions(dbPath);
-		assert.equal(rows.length, 2);
-		const [first] = rows;
+		assert.equal(rows.length, 2, "子线程(parent_id 非空)不单独列出 —— 与 Zed 面板一致");
+		assert.deepEqual(
+			rows.map((row) => row.id),
+			["t1", "t2"],
+		);
+		const [first, second] = rows;
 		assert.equal(first.tool, "zed");
 		assert.equal(first.name, "审查阶段一收尾");
 		assert.equal(first.named, false, "自动生成的 summary 不算用户命名");
 		assert.equal(first.cwd, "C:\\Users\\23652");
 		assert.equal(first.createdAt.toISOString(), "2026-09-03T12:44:59.550Z");
 		assert.equal(first.sizeBytes, 87);
-		assert.equal(rows[1].parentId, "t1");
-		assert.equal(rows[1].cwd, "C:\\a", "JSON 数组取第一个");
+		assert.equal(second.cwd, "C:\\a", "JSON 数组取第一个");
 	} finally {
 		cleanup(dir);
 	}

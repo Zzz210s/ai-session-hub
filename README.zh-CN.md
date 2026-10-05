@@ -280,7 +280,7 @@ Zed 与 DeepSeek Harness 是桌面应用,会话不在终端里,但它们的元�
 
 | 应用 | 会话存储 | ais 读到什么 |
 |---|---|---|
-| Zed | `%LOCALAPPDATA%\Zed\threads\threads.db`(Linux:`~/.local/share/zed/threads/threads.db`) | SQLite 里的线程元数据:标题、创建/更新时间、所属项目(`folder_paths`)、父线程;线程正文是 zstd BLOB,**不解压** |
+| Zed | `%LOCALAPPDATA%\Zed\threads\threads.db`(Linux:`~/.local/share/zed/threads/threads.db`) | SQLite 里的线程元数据:标题、创建/更新时间、所属项目(`folder_paths`);线程正文是 zstd BLOB,**不解压**。只列**顶层线程** —— agent 派生的子线程(`parent_id` 非空)在 Zed 自己的面板里是嵌套在父线程内部的,不单独列出 |
 | DeepSeek Harness | `$DSH_HOME`(默认 `~/.dsh`)下 `storages/session_projcache/sessions/` 的元数据 + `sessions/<项目slug>/<id>/session.v4.jsonl.zstd` 的正文 | 元数据:标题、时间、项目、体积;正文 **不解压** |
 
 **按键**(GUI 会话没有终端,与 CLI 会话不同):
