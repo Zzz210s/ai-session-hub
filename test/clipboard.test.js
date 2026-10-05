@@ -23,3 +23,19 @@ test("writeClipboard:正常命令写入后回「已复制: 文本」", async () 
 	const result = await writeClipboard("hello", clip, args);
 	assert.deepEqual(result, { ok: true, detail: "已复制: hello" });
 });
+
+test("writeClipboard:命令不存在时按失败返回且不挂起(回归:spawn 失败只 emit close)", async () => {
+	const result = await Promise.race([
+		writeClipboard("x", "definitely-not-a-command-xyz", []),
+		new Promise((resolve) => setTimeout(() => resolve("TIMEOUT"), 3000)),
+	]);
+	assert.notEqual(result, "TIMEOUT", "spawn ENOENT 不该让 Promise 永久 pending");
+	assert.equal(result.ok, false);
+	assert.match(result.detail, /复制失败/);
+});
+
+test("writeClipboard:子进程不读 stdin 也不退出时由 timeout 兜底", async () => {
+	const result = await writeClipboard("x", process.execPath, ["-e", "setTimeout(() => {}, 30000)"], 300);
+	assert.equal(result.ok, false);
+	assert.match(result.detail, /复制失败/);
+});

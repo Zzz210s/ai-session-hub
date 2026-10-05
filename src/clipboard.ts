@@ -17,20 +17,30 @@ export function clipboardCommand(
 }
 
 /**
- * 把文本写给剪贴板命令的 stdin,等 stdin 与子进程两边都落定再回结果。
+ * 把文本写给剪贴板命令的 stdin,等 execFile 回调落定后回结果。
  *
- * 为什么必须挂 stdin 的 error 监听:子进程提前退出(没读完输入)时,写入 stdin 会
- * emit EOF/EPIPE。没有监听就是 uncaught exception,而 execFile 回调还可能报成功 ——
- * 会出现"提示已复制、其实没复制"。这里把这类错误一律按失败返回。
+ * 只在 execFile 回调里 resolve:子进程启动失败(ENOENT)与正常结束都会走到回调,
+ * 而 spawn 失败时 stdin 只 emit "close"(既无 error 也无 finish),若把 stdin 的
+ * 完成也当门闩就会永久挂起。
+ *
+ * stdin 的 error 监听仍然保留:子进程提前退出(没读完输入)时写入 stdin 会 emit
+ * EPIPE,而 execFile 回调可能报成功 —— 会出现"提示已复制、其实没复制"。这类错误
+ * 只用来覆盖失败文案(记录 fmt 到 stdinError),错误与否仍以回调为准。
+ *
+ * timeout 兜住"子进程既不读 stdin 也不退出"的死角:超时由 execFile 杀进程并回调。
  */
-export function writeClipboard(text: string, clip: string, args: string[]): Promise<ActionResult> {
+export function writeClipboard(
+	text: string,
+	clip: string,
+	args: string[],
+	timeoutMs = 5000,
+): Promise<ActionResult> {
 	return new Promise<ActionResult>((resolve) => {
-		let childDone = false;
-		let stdinDone = false;
-		let childError: unknown = null;
+		let settled = false;
 		let stdinError: Error | null = null;
-		const finish = (): void => {
-			if (!childDone || !stdinDone) return;
+		const finish = (childError: unknown): void => {
+			if (settled) return;
+			settled = true;
 			let message = "";
 			if (stdinError) message = stdinError.message;
 			else if (childError) message = childError instanceof Error ? childError.message : String(childError);
@@ -41,24 +51,15 @@ export function writeClipboard(text: string, clip: string, args: string[]): Prom
 					: { ok: true, detail: `已复制: ${text}` },
 			);
 		};
-		const child = execFile(clip, args, (error) => {
-			childDone = true;
-			childError = error ?? null;
-			finish();
+		const child = execFile(clip, args, { timeout: timeoutMs }, (error) => {
+			finish(error ?? null);
 		});
 		if (!child.stdin) {
-			stdinDone = true;
-			finish();
+			finish(null);
 			return;
 		}
 		child.stdin.on("error", (error) => {
 			stdinError = error;
-			stdinDone = true;
-			finish();
-		});
-		child.stdin.on("finish", () => {
-			stdinDone = true;
-			finish();
 		});
 		child.stdin.end(text);
 	});
