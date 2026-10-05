@@ -320,6 +320,7 @@ Zed and DeepSeek Harness are desktop apps whose sessions never live in a termina
 - ais **can** bring the app window to the foreground (focus), but it **cannot** open one specific session inside the app — there is no deep link, so pick the session by title in the app's own session list; there is also no terminal to hand over to (a desktop app has no command-line resume entry point)
 - **Zed threads cannot be deleted from ais** — the store is SQLite and deleting rows risks corrupting the app's data; delete them inside Zed
 - **DeepSeek Harness sessions can be deleted by ais** (ais side only): ais moves the session directory and its `session_projcache` metadata entry to the trash together — one path pair, not a database row — so they can be restored by moving them back
+- **Archived / pinned DSH sessions are marked, not hidden** — each carries an `[归档]` (archived) or `[置顶]` (pinned) tag, archived names are dimmed, and there is no separate filter key yet
 
 ## Scope & limits
 

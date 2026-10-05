@@ -3,7 +3,7 @@
  *
  * 来源(全部只读,不解压正文):
  *   storages/session_projcache/sessions/<id>.json   标题、lastPromptAt
- *   storages/workspace.json                          归档/置顶清单、默认工作区路径
+ *   storages/workspace.json                          归档/置顶清单、各工作区路径(逐 slug 匹配 cwd)
  *   sessions/<项目slug>/<id>/session.v4.jsonl.zstd   存在性、大小、mtime
  */
 
@@ -12,6 +12,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SessionRecord } from "../model.ts";
+import { readWorkspace } from "./dsh-workspace.ts";
 
 export function dshHome(env: NodeJS.ProcessEnv = process.env): string {
 	const explicit = (env.DSH_HOME ?? "").trim();
@@ -51,40 +52,11 @@ function readMeta(json: unknown): DshMeta | undefined {
 	};
 }
 
-interface WorkspaceInfo {
-	archived: Set<string>;
-	pinned: Set<string>;
-	/** 默认工作区路径(decodeSlug 失败时的 cwd 兜底) */
-	defaultPath?: string;
-}
-
-function idList(value: unknown): string[] {
-	return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-async function readWorkspace(home: string): Promise<WorkspaceInfo> {
-	try {
-		const raw = JSON.parse(await readFile(join(home, "storages", "workspace.json"), "utf8")) as {
-			global?: { archivedSessionIds?: unknown; pinnedSessionIds?: unknown; defaultWorkspaceId?: unknown };
-			tables?: { workspaces?: Record<string, { path?: unknown }> };
-		};
-		const wsId = typeof raw.global?.defaultWorkspaceId === "string" ? raw.global.defaultWorkspaceId : undefined;
-		const path = wsId ? raw.tables?.workspaces?.[wsId]?.path : undefined;
-		return {
-			archived: new Set(idList(raw.global?.archivedSessionIds)),
-			pinned: new Set(idList(raw.global?.pinnedSessionIds)),
-			defaultPath: typeof path === "string" && path.length > 0 ? path : undefined,
-		};
-	} catch {
-		return { archived: new Set(), pinned: new Set() };
-	}
-}
-
 export async function scanDshSessions(home: string = dshHome()): Promise<SessionRecord[]> {
 	const metaDir = join(home, "storages", "session_projcache", "sessions");
 	const sessionsRoot = join(home, "sessions");
 	if (!existsSync(metaDir)) return [];
-	const { archived, pinned, defaultPath } = await readWorkspace(home);
+	const { archived, pinned, defaultPath, paths } = await readWorkspace(home);
 
 	// 1) 元数据:每文件一条会话
 	const metas = new Map<string, { file: string; meta: DshMeta }>();
@@ -115,7 +87,8 @@ export async function scanDshSessions(home: string = dshHome()): Promise<Session
 	}
 	const seen = new Set<string>();
 	for (const slug of slugs) {
-		const cwd = decodeSlug(slug) ?? defaultPath;
+		// 权威路径优先(清单里的 path 编码后与会话目录名精确相等),反解与默认工作区只作兜底
+		const cwd = paths.get(slug) ?? decodeSlug(slug) ?? defaultPath;
 		let ids: string[] = [];
 		try {
 			ids = (await readdir(join(sessionsRoot, slug), { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name);

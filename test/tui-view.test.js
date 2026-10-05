@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { buildTuiState, displayWidth, fit, renderScreen, stripAnsi, viewport } from "../src/tui-view.ts";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
+const DIM = "\u001b[2m";
 
 function view(overrides = {}) {
 	return {
@@ -121,6 +122,16 @@ test("renderScreen:GUI 会话提示聚焦/复制,并如实列出 DSH 可删除",
 	assert.match(footer, /Enter 聚焦窗口/);
 	assert.match(footer, /c 复制会话信息/);
 	assert.match(footer, /d 删除\(DSH\)/);
+});
+
+test("renderScreen:归档会话带 [归档] 且名称灰显、置顶会话带 [置顶]", () => {
+	const rows = [view({ id: "a", name: "归档的", archived: true }), view({ id: "b", name: "置顶的", pinned: true }), view({ id: "c", name: "当前的" })];
+	const lines = renderScreen(state({ rows, cursor: 2 }));
+	const text = lines.map(stripAnsi).join("\n");
+	assert.match(text, /\[归档\] 归档的/);
+	assert.match(text, /\[置顶\] 置顶的/);
+	const archivedLine = lines.find((line) => stripAnsi(line).includes("[归档]")) ?? "";
+	assert.ok(archivedLine.includes(`${DIM}归档的`), "归档会话名应灰显");
 });
 
 test("renderScreen:装了拓展时展示拓展自己的键位提示", () => {

@@ -8,6 +8,8 @@ import { decodeSlug, scanDshSessions } from "../src/scan/dsh.ts";
 const SLUG = "--C-Users-23652-Documents-demo--";
 const ID = "0691aeec-4482-4674-8a6d-2ed51504c079";
 const DEFAULT_WS = "C:\\Users\\23652\\Documents\\deepseek-harness\\default-workspace";
+// workspace.json 的 path 编码后与真实会话目录名一致(连字符属于路径本身,反解会失真)
+const WS_SLUG = "--C-Users-23652-Documents-deepseek-harness-default-workspace--";
 
 function makeHome({
 	title = "config-ai",
@@ -16,7 +18,7 @@ function makeHome({
 	pinned = false,
 	body = true,
 	workspace = true,
-	slug = SLUG,
+	slug = WS_SLUG,
 } = {}) {
 	const home = mkdtempSync(join(tmpdir(), "ais-dsh-"));
 	const id = ID;
@@ -66,6 +68,30 @@ test("decodeSlug:把 DSH 的项目 slug 还原成路径", () => {
 	assert.equal(decodeSlug("--Users-23652-demo--"), undefined);
 });
 
+test("scanDshSessions:用 workspace.json 的 path 编码匹配会话目录(路径含 - 也解对)", async () => {
+	const { home } = makeHome();
+	try {
+		const rows = await scanDshSessions(home);
+		assert.equal(rows.length, 1);
+		// 反解会得到 deepseek/harness/default/workspace,权威清单匹配得到真实路径
+		assert.equal(rows[0].cwd, DEFAULT_WS);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("scanDshSessions:slug 匹配不到 workspace.json 时回落默认工作区", async () => {
+	// 没有盘符 -> decodeSlug 返回 undefined,只能回落默认工作区
+	const { home } = makeHome({ slug: "--Users-23652-demo--" });
+	try {
+		const rows = await scanDshSessions(home);
+		assert.equal(rows.length, 1);
+		assert.equal(rows[0].cwd, DEFAULT_WS);
+	} finally {
+		cleanup(home);
+	}
+});
+
 test("scanDshSessions:标题/活跃时间/归档/置顶/大小/元数据路径都映射出来", async () => {
 	const { home, id } = makeHome({ archived: true, pinned: true });
 	try {
@@ -76,7 +102,7 @@ test("scanDshSessions:标题/活跃时间/归档/置顶/大小/元数据路径�
 		assert.equal(row.id, id);
 		assert.equal(row.name, "config-ai");
 		assert.equal(row.named, false);
-		assert.equal(row.cwd, "C:\\Users\\23652\\Documents\\demo");
+		assert.equal(row.cwd, DEFAULT_WS);
 		assert.equal(row.updatedAt.toISOString(), new Date(1791092696504).toISOString());
 		assert.equal(row.archived, true);
 		assert.equal(row.pinned, true);

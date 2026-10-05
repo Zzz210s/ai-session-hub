@@ -39,8 +39,10 @@ export function rowLine(view: SessionView, selected: boolean, leftWidth: number,
 	const name = sanitizeForDisplay(title(view));
 	// GUI 会话(zed/dsh)在工具名后标出形态与是否在跑;CLI 会话不占宽度
 	const badge = view.kind === "gui" ? `${view.appRunning ? "[GUI app]" : "[GUI]"} ` : "";
+	// 归档/置顶只做标记 + 灰显,不隐藏(筛选键尚未实现)
+	const marks = `${view.pinned ? "[置顶] " : ""}${view.archived ? "[归档] " : ""}`;
 	// 总览里只放"工具 + 会话名";目录/年龄/标签等一律放到右侧详情
-	const body = fit(`${glyph} ${tool}${badge}${name}`, leftWidth - 1);
+	const body = fit(`${glyph} ${tool}${badge}${marks}${name}`, leftWidth - 1);
 	if (selected) {
 		// 选中行整行反显;行内不能插 RESET,否则反显被打断(表现为"看不到光标")
 		return `${REVERSE} ${body}${RESET}`;
@@ -49,9 +51,9 @@ export function rowLine(view: SessionView, selected: boolean, leftWidth: number,
 	const colorOn = state.color !== false;
 	const toolTint = toolColor(view.tool, colorOn);
 	let tinted = toolTint ? body.replace(tool.trimEnd(), `${toolTint}${tool.trimEnd()}${RESET}${DIM}`) : body;
-	// 被用户命名过的会话名用亮黄色突出
-	const nameTint = view.named ? namedNameColor(colorOn) : "";
-	if (nameTint) tinted = tinted.replace(name, `${nameTint}${name}${RESET}${DIM}`);
+	// 归档会话名灰显;未归档且被用户命名过的会话名用亮黄色突出
+	const nameTint = view.archived ? (colorOn ? DIM : "") : view.named ? namedNameColor(colorOn) : "";
+	if (nameTint && name) tinted = tinted.replace(name, `${nameTint}${name}${RESET}${DIM}`);
 	return ` ${tinted.replace(glyph, `${statusColor(view)}${glyph}${RESET}${DIM}`)}${RESET}`;
 }
 
