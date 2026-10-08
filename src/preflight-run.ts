@@ -54,6 +54,36 @@ function bashStep(
 	return { label, command: bash, args: ["-lc", command + suffix], timeoutMs: options.timeoutMs ?? 900_000, group: options.group };
 }
 
+const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+
+/**
+ * pi 本体由谁来更新。
+ *
+ * 不让 pi 自己更新自己(2026-10-08 实测事故):`pi update` 是在 **pi 运行中**执行
+ * `pnpm install -g` 去替换 pi 自己所在的那棵依赖树,而树里有原生模块
+ * (`@earendil-works/pi-tui/native/win32/prebuilds/win32-x64/*.node`)。Windows 上被运行中
+ * 进程加载的 .node 删不掉、换不掉,替换失败后 pnpm 已经把全局链接指向临时目录 ——
+ * 结果是悬空链接 + 空注册表,之后每次启动都报 MODULE_NOT_FOUND,而失败当时毫无征兆
+ * (那次是 0.85.1 → 1.1.0 的真跨版本更新;版本没变时 `pi update` 不装任何东西,所以以前从没暴露)。
+ *
+ * 由 shell 直接调包管理器,就没有 pi 进程参与替换。认不出装法时回落到 `pi update`:
+ * 类 Unix 上替换运行中的文件本来就没问题,不受这个坑影响。
+ *
+ * 残留风险:替换期间若有**别的** pi 会话在跑,它的 .node 仍会挡住替换。所以紧随其后有一步
+ * `校验 pi 可执行`,坏掉时当场说清怎么修。
+ */
+export function piUpdateCommand(piBin: string): string {
+	const path = piBin.replace(/\\/g, "/").toLowerCase();
+	if (path.includes("/pnpm/") || path.includes("/.pnpm/")) {
+		// --config.minimumReleaseAge=0:pi 自己的更新器也带这个,否则 pnpm 的新版本冷静期会挡住刚发布的版本
+		return `pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 ${PI_PACKAGE}@latest`;
+	}
+	if (path.includes("/npm/") || path.includes("/node_modules/")) {
+		return `npm install -g --ignore-scripts --min-release-age=0 ${PI_PACKAGE}@latest`;
+	}
+	return `"${piBin}" update`;
+}
+
 /** 全部更新步骤(不检测,直接跑);没有 Git Bash 时返回空(不做半套) */
 export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Step[] {
 	const bash = input.gitBash;
@@ -61,8 +91,10 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Ste
 	const quoted = `"${input.piBin}"`;
 	// 分组:同一工具的两步保持先后顺序;不同工具并行(实测 4 步串行 11.7 秒 → 并行 ≈ 6 秒)
 	const steps: Step[] = [
-		bashStep("更新 pi 本体", bash, `${quoted} update`, { timeoutMs: 600_000, group: "pi" }),
+		bashStep("更新 pi 本体", bash, piUpdateCommand(input.piBin), { timeoutMs: 600_000, group: "pi" }),
 		bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`, { group: "pi" }),
+		// 严格步骤:pi 起不来时当场失败(不写 TTL),而不是等会话启动后抛 MODULE_NOT_FOUND
+		bashStep("校验 pi 可执行", bash, `${quoted} --version`, { group: "pi" }),
 	];
 	const others: [string, string, string, string][] = [
 		["claude", "claude update", "更新 Claude Code", "claude"],
@@ -119,7 +151,11 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 		// 只在全部成功时记时间:任何一步失败都不写,下次启动立刻重试
 		if (failed.length === 0) writePreflightState(statePath);
 		const versions = await versionsPromise;
-		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions, dsh.status);
+		// pi 本体坏了要立刻说清怎么修:症状是启动时一屏 MODULE_NOT_FOUND,光看堆栈无从下手
+		const repair = failed.some((step) => step.label === "校验 pi 可执行")
+			? ";pi 本体起不来,修复:" + piUpdateCommand(resolvePi()) + " 然后重跑 config-ai/setup.sh"
+			: "";
+		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions, dsh.status) + repair;
 	} catch (error) {
 		// 版本读取可能还在飞:吞掉它的拒绝,免得变成未处理拒绝
 		await versionsPromise?.catch(() => undefined);

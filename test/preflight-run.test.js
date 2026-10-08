@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { isInstalled, planDshCliSteps, planUpdateSteps, resolvePi } from "../src/preflight-run.ts";
+import { isInstalled, piUpdateCommand, planDshCliSteps, planUpdateSteps, resolvePi } from "../src/preflight-run.ts";
 
 const BASH = "C:/Program Files/Git/bin/bash.exe";
 
@@ -43,6 +43,24 @@ test("pi 本体与扩展恒在,且都经 Git Bash 执行", () => {
 		assert.equal(step.args[0], "-lc");
 		assert.match(step.args[1], /"C:\/x\/pi\.CMD"/, "pi 路径要加引号");
 	}
+});
+
+test("pi 本体三步恒在:更新本体、更新扩展、校验可执行", () => {
+	const steps = planUpdateSteps({ piBin: "C:/x/pi.CMD", gitBash: BASH });
+	assert.deepEqual(
+		steps.slice(0, 3).map((step) => step.label),
+		["更新 pi 本体", "更新 pi 扩展", "校验 pi 可执行"],
+	);
+	assert.doesNotMatch(steps[2].args[1], /\|\| true$/, "校验必须是严格步骤:坏了要拦住 TTL 与提示");
+});
+
+test("piUpdateCommand:pnpm 装法交给包管理器,不让 pi 自己替换自己", () => {
+	// 2026-10-08 事故:pi update 在自己运行中替换依赖树,Windows 上原生模块被锁 → 全局安装损坏
+	const pnpm = piUpdateCommand("C:/Users/x/AppData/Local/pnpm/bin/pi.CMD");
+	assert.equal(pnpm, "pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @earendil-works/pi-coding-agent@latest");
+	const npmGlobal = piUpdateCommand("C:/Users/x/AppData/Roaming/npm/pi.CMD");
+	assert.match(npmGlobal, /^npm install -g --ignore-scripts --min-release-age=0 /);
+	assert.equal(piUpdateCommand("/usr/local/bin/pi"), '"' + "/usr/local/bin/pi" + '" update', "认不出装法就回落到 pi update");
 });
 
 test("其它 CLI 只在装了时排步骤,并带尽力而为后缀", { skip: process.platform !== "win32" }, () => {
