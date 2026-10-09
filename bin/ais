@@ -1,16 +1,34 @@
 #!/usr/bin/env bash
-# ais —— Linux/macOS 启动器(等价于 Windows 侧的 bin/ais.cmd)
-# 相对自身解析仓库根,所以整目录搬走后依然可用。
+# ais —— 启动器(Linux/macOS/Git Bash 通用,不含任何本机路径)
+# 仓库位置按序解析:① 本脚本旁的 ais.path(安装时写入)② ~/ai-session-hub ③ 本脚本的上级目录。
+# 都找不到时打印已尝试的路径与下一步,而不是抛 MODULE_NOT_FOUND。
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
-NODE_BIN="$(command -v node || true)"
-# 安装器可能把 Node 装在自己的目录里(--install-node),此时 PATH 里未必有 node
-if [ -z "$NODE_BIN" ] && [ -x "${XDG_DATA_HOME:-$HOME/.local/share}/node/bin/node" ]; then
-  NODE_BIN="${XDG_DATA_HOME:-$HOME/.local/share}/node/bin/node"
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CANDIDATES=()
+if [ -f "$SELF_DIR/ais.path" ]; then
+  IFS= read -r RECORDED < "$SELF_DIR/ais.path" || true
+  [ -n "${RECORDED:-}" ] && CANDIDATES+=("$RECORDED")
 fi
-if [ -z "$NODE_BIN" ]; then
-  echo "ais: 找不到 node(需要 Node 24+);重跑安装器加 --install-node,或把 node 放进 PATH" >&2
-  exit 127
-fi
-exec "$NODE_BIN" --no-warnings "$REPO/src/cli.ts" "$@"
+CANDIDATES+=("$HOME/ai-session-hub")
+CANDIDATES+=("$(cd "$SELF_DIR/.." && pwd)")
+
+for DIR in "${CANDIDATES[@]}"; do
+  [ -f "$DIR/src/cli.ts" ] || continue
+  NODE_BIN="$(command -v node || true)"
+  # 安装器可能把 Node 装在自己的目录里(--install-node),此时 PATH 里未必有 node
+  if [ -z "$NODE_BIN" ] && [ -x "${XDG_DATA_HOME:-$HOME/.local/share}/node/bin/node" ]; then
+    NODE_BIN="${XDG_DATA_HOME:-$HOME/.local/share}/node/bin/node"
+  fi
+  if [ -z "$NODE_BIN" ]; then
+    echo "ais: 找不到 node(需要 Node 24+);重跑安装器加 --install-node,或把 node 放进 PATH" >&2
+    exit 127
+  fi
+  exec "$NODE_BIN" --no-warnings "$DIR/src/cli.ts" "$@"
+done
+
+echo "ais: 找不到 ai-session-hub 仓库目录。已尝试:" >&2
+for DIR in "${CANDIDATES[@]}"; do echo "  $DIR" >&2; done
+echo "  · 仓库在虚拟盘/移动盘上?先挂载它(Windows: Mount-DiskImage <盘文件>)" >&2
+echo "  · 换过位置?重跑仓库里的 setup.sh,它会更新 $SELF_DIR/ais.path" >&2
+exit 1

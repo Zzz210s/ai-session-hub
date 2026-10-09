@@ -69,14 +69,15 @@ fi
 # 启动器仍指向真正的开发环境
 REPO_REAL="$(cd "$REPO_DIR" && pwd -P)"
 if [ -d "$HOME/bin" ]; then
-  printf '#!/usr/bin/env bash\nexec node --no-warnings "%s/src/cli.ts" "$@"\n' "$REPO_REAL" > "$HOME/bin/ais"
+  # 装"解析式"启动器:文件里不含本机绝对路径,仓库位置单独写进 ais.path。
+  # 启动器按 [ais.path → ~/ai-session-hub → 自身上级目录] 依次解析,都找不到时打印指引 ——
+  # 所以仓库所在盘没挂载、或仓库被搬走,都不会再抛 MODULE_NOT_FOUND。
+  cp -f "$REPO_DIR/bin/ais"     "$HOME/bin/ais"
+  cp -f "$REPO_DIR/bin/ais.cmd" "$HOME/bin/ais.cmd"
+  cp -f "$REPO_DIR/bin/ais.ps1" "$HOME/bin/ais.ps1"   # 带 BOM,cp 逐字节保留
   chmod +x "$HOME/bin/ais"
-  # PowerShell / cmd 启动器:写绝对仓库路径(拷贝自仓库的 bin/ 版本会以 ~/bin/.. 推断,
-  # 指向用户目录而不是仓库——两者都会写坏路径,所以这里生成)
-  REPO_WIN="$(cygpath -w "$REPO_REAL" 2>/dev/null || printf '%s' "$REPO_REAL")"
-  printf '@echo off\r\nnode --no-warnings "%s\\src\\cli.ts" %%*\r\n' "$REPO_WIN" > "$HOME/bin/ais.cmd"
-  printf '& node --no-warnings "%s\\src\\cli.ts" @args\n' "$REPO_WIN" > "$HOME/bin/ais.ps1"
-  log "已安装命令: $HOME/bin/ais(bash)· ais.cmd / ais.ps1(PowerShell/cmd)"
+  printf '%s\n' "$REPO_REAL" > "$HOME/bin/ais.path"
+  log "已安装命令: $HOME/bin/ais(bash)· ais.cmd / ais.ps1(cmd/PowerShell);仓库位置记在 $HOME/bin/ais.path"
 else
   log "用法: node $REPO_DIR/src/cli.ts [list|doctor|focus <查询>];TUI 直接运行 ais"
 fi
