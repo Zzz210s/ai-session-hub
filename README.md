@@ -336,6 +336,20 @@ Zed and DeepSeek Harness are desktop apps whose sessions never live in a termina
 2. Session notes/tags/archiving; usage panel; hook-driven instant refresh
 3. Panes: draggable ratios, scrollback inside a pane (engine: [tui-panes](https://github.com/Zzz210s/tui-panes))
 
+## Contributing
+
+This is a solo, spare-time project with a deliberately narrow scope: **it discovers sessions you already started — it never launches them.** Inside that line there is room to help, and none of these entry points is large:
+
+| What | Where to start |
+| --- | --- |
+| Add a session source | One file per source under `src/scan/` (`pi.ts`, `claude.ts`, `opencode.ts`, `dsh.ts`). Copy an existing one — the real work is finding where your CLI writes its sessions and what the fields mean. |
+| Add a platform | `src/live/` — `windows.ts`, `linux.ts`, `linux-focus.ts`. **macOS is the biggest gap**: the live probe needs `ps -o etimes`, which BSD `ps` does not have. |
+| Add an extension | The core references no concrete extension (see `src/extensions.ts`); split panes arrive that way. You can add a feature without touching the core. |
+| Report a bug | Include `ais doctor` output and your platform — it saves a round trip. |
+| Ask for something | Anything, as long as it does not cross the "never a launcher" line. |
+
+Open an issue before a PR that touches the core. Not gatekeeping — I would rather talk the boundary through than have you build something that has to be turned down. I am the only maintainer and replies can be slow, but every one gets read.
+
 ## License
 
 MIT
