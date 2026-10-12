@@ -8,8 +8,13 @@
  * 用户要求(2026-10-05):"ais 启动太慢" —— 实测一次完整自更新 10-14 秒,而这几条命令
  * 即使已是最新也要各自去 npm 走一趟元数据。因此加了 **TTL 跳过**:上次全部成功的时间
  * 戳记在 `~/.ai-session-hub/preflight-state.json`,TTL(默认 6h)内整段跳过,过期才跑。
- * 仍然不比对版本(跨安装方式易碎),只看时间戳;细节与旧决策的关系见 preflight-ttl.ts。
- * 任何一步失败都不写时间戳,所以下次启动会立刻重试。
+ * 细节与旧决策的关系见 preflight-ttl.ts。任何一步失败都不写时间戳,所以下次启动会立刻重试。
+ *
+ * 用户要求(2026-10-12):"修复 ais 启动过慢" —— TTL 过期后一次完整自更新已涨到 **37.5s**
+ * (2026-10-08 把 pi 自更新从 `pi update` 换成 `pnpm install -g`,实测 9-28s;claude 侧 6.6s)。
+ * 于是加了 **版本预检**(update-precheck.ts):先花约 2-4 秒查"本地版本 vs registry latest",
+ * 已是最新的工具直接跳过对应命令 —— 实测全绿时 37.5s -> 约 4-6s。预检**失败即更新**,
+ * 不会因为检测失效而漏更新;`AIS_UPDATE_PRECHECK=0` 可关闭。
  *
  * 顺序(只更新 AI CLI 与它们的插件,不管其它项目):
  *   1) pi update
@@ -26,10 +31,11 @@
  *         AIS_UPDATE_TTL=0 表示每次都完整跑一遍。
  */
 
-import { appVersionSummary, hasGlobalDshCli, planDshCliStep, readAppVersions, type DshCliStatus } from "./apps.ts";
+import { appVersionSummary, planDshCliStep, readAppVersions, type DshCliStatus } from "./apps.ts";
 import { formatDuration, isInstalled, resolvePi, resolvePreflightShell } from "./preflight-env.ts";
 import { parseTtl, readPreflightState, skipReason, stateFilePath, writePreflightState } from "./preflight-ttl.ts";
 import { execRunner, preflight, type Runner, type Step } from "./preflight.ts";
+import { precheckEnabled, precheckUpdates, type PrecheckResult } from "./update-precheck.ts";
 
 // 兼容既有导入路径(测试与 cli 都从本模块取这些)
 export { formatDuration, isInstalled, resolveGitBash, resolvePi, resolvePreflightShell } from "./preflight-env.ts";
@@ -41,6 +47,10 @@ export interface StartOptions {
 	runner?: Runner;
 	/** preflight 实现(测试注入,默认真跑) */
 	runPreflight?: typeof preflight;
+	/** 预检用的路径与 fetch(测试注入) */
+	settingsPath?: string;
+	extensionsRoot?: string;
+	fetchImpl?: typeof fetch;
 }
 
 /** 经 Git Bash 执行一条命令(可尽力而为:失败不计入失败项,也不拦住启动) */
@@ -84,18 +94,27 @@ export function piUpdateCommand(piBin: string): string {
 	return `"${piBin}" update`;
 }
 
-/** 全部更新步骤(不检测,直接跑);没有 Git Bash 时返回空(不做半套) */
-export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Step[] {
+/** 哪些步骤可以跳过(由 update-precheck.ts 的版本比对决定;未知一律不跳) */
+export interface SkipFlags {
+	pi?: boolean;
+	extensions?: boolean;
+	claude?: boolean;
+}
+
+/** 全部更新步骤(没有 Git Bash 时返回空,不做半套);skip 里的项按预检结论跳过 */
+export function planUpdateSteps(input: { piBin: string; gitBash?: string; skip?: SkipFlags }): Step[] {
 	const bash = input.gitBash;
 	if (!bash) return [];
 	const quoted = `"${input.piBin}"`;
+	const skip = input.skip ?? {};
 	// 分组:同一工具的两步保持先后顺序;不同工具并行(实测 4 步串行 11.7 秒 → 并行 ≈ 6 秒)
-	const steps: Step[] = [
-		bashStep("更新 pi 本体", bash, piUpdateCommand(input.piBin), { timeoutMs: 600_000, group: "pi" }),
-		bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`, { group: "pi" }),
-		// 严格步骤:pi 起不来时当场失败(不写 TTL),而不是等会话启动后抛 MODULE_NOT_FOUND
-		bashStep("校验 pi 可执行", bash, `${quoted} --version`, { group: "pi" }),
-	];
+	const steps: Step[] = [];
+	if (!skip.pi) {
+		steps.push(bashStep("更新 pi 本体", bash, piUpdateCommand(input.piBin), { timeoutMs: 600_000, group: "pi" }));
+		// 严格步骤:只在真的动过安装后校验(没装东西就没什么可坏);pi 起不来时当场失败,不写 TTL
+		steps.push(bashStep("校验 pi 可执行", bash, `${quoted} --version`, { group: "pi" }));
+	}
+	if (!skip.extensions) steps.push(bashStep("更新 pi 扩展", bash, `${quoted} update --extensions`, { group: "pi" }));
 	const others: [string, string, string, string][] = [
 		["claude", "claude update", "更新 Claude Code", "claude"],
 		["claude", "claude plugin update", "更新 Claude 插件", "claude"],
@@ -105,41 +124,89 @@ export function planUpdateSteps(input: { piBin: string; gitBash?: string }): Ste
 	];
 	for (const [bin, command, label, group] of others) {
 		if (!isInstalled(bin)) continue;
+		if (skip.claude && group === "claude" && label === "更新 Claude Code") continue;
 		steps.push(bashStep(label, bash, command, { best: true, group }));
 	}
 	return steps; // 独立程序:不拉别人的仓库,也不跑别人的 setup.sh
 }
 
-/** DSH 全局 CLI 的规划结果:要执行的步骤 + 摘要用的状态(0 或 1 个);runner/shell 可注入以便离线单测 */
-export async function planDshCliSteps(
-	runner: Runner = execRunner,
+/**
+ * DSH 全局 CLI 的规划结果:要执行的步骤 + 摘要用的状态(0 或 1 个)。
+ *
+ * 用**文件系统**判定是否装了(与其它 CLI 同一套 isInstalled),不再跑 `npm ls -g` ——
+ * 那条命令要 2 秒(实测),而它唯一的作用就是回答“装没装”,答案就在 PATH 上。
+ */
+export function planDshCliSteps(
 	npmAvailable = isInstalled("npm"),
 	shell: string | undefined = resolvePreflightShell(),
-): Promise<{ steps: Step[]; status: DshCliStatus }> {
+	hasCli = isInstalled("dsh"),
+): { steps: Step[]; status: DshCliStatus } {
 	if (!npmAvailable || !shell) return { steps: [], status: "npm-missing" };
-	const step = planDshCliStep({ npmAvailable: true, hasGlobalCli: await hasGlobalDshCli({ shell, runner }), shell });
+	const step = planDshCliStep({ npmAvailable: true, hasGlobalCli: hasCli, shell });
 	return step ? { steps: [step], status: "updated" } : { steps: [], status: "not-installed" };
 }
 
 /**
- * 启动前自更新:TTL 内跳过,否则按固定顺序跑全部更新命令;返回一行摘要(失败不抛)。
- * 不比对版本 —— 只看"上次全部成功"的时间戳(TTL 语义见 preflight-ttl.ts)。
+ * 跑一次版本预检:读本地 pi 版本(`pi --version`)+ 并行查 registry latest。
+ * 任何异常都退回 unknown(照旧更新),不影响启动。
+ *
+ * pi 的版本必须**经 Git Bash** 读:pi 是 `.cmd` 包装器,`execFile` 直跑会
+ * `spawn EINVAL`(2026-10-12 实测),那样预检永远拿不到 pi 版本 —— 表现为"pi 本体每次都更新",
+ * 而它恰好是最慢的一步(pnpm install -g,实测 9-168 秒)。类 Unix 上直接用 `pi` 即可。
+ */
+async function runPrecheck(options: StartOptions, runner: Runner, piBin: string, shell?: string): Promise<PrecheckResult | undefined> {
+	const readPiVersion = async (): Promise<string | undefined> => {
+		const parse = (out: string) => /\d+\.\d+\.\d+[-+\w.]*/.exec(out)?.[0];
+		if (shell) {
+			const viaShell = await runner(shell, ["-lc", `"${piBin}" --version`], 60_000);
+			if (viaShell.ok) return parse(viaShell.out);
+		}
+		const direct = await runner(piBin, ["--version"], 60_000);
+		return direct.ok ? parse(direct.out) : undefined;
+	};
+	try {
+		return await precheckUpdates({
+			piVersion: readPiVersion,
+			settingsPath: options.settingsPath,
+			extensionsRoot: options.extensionsRoot,
+			fetchImpl: options.fetchImpl,
+		});
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * 启动前自更新:TTL 内跳过;过期则先做版本预检,只跑真的需要跑的更新命令;返回一行摘要(失败不抛)。
  */
 export async function startPreflight(options: StartOptions = {}): Promise<string | undefined> {
 	let versionsPromise: Promise<Record<string, string>> | undefined;
 	try {
 		if (options.disabled || process.env.AIS_NO_UPDATE === "1") return undefined;
 		const statePath = stateFilePath();
-		const skip = skipReason(readPreflightState(statePath), Date.now(), parseTtl(process.env.AIS_UPDATE_TTL));
-		if (skip) return "[ais] 启动前自更新: " + skip;
+		const ttlSkip = skipReason(readPreflightState(statePath), Date.now(), parseTtl(process.env.AIS_UPDATE_TTL));
+		if (ttlSkip) return "[ais] 启动前自更新: " + ttlSkip;
 		const shell = resolvePreflightShell();
-		const steps = planUpdateSteps({ piBin: resolvePi(), gitBash: shell });
-		if (steps.length === 0) return undefined;
+		const runner = options.runner ?? execRunner;
+		const piBin = resolvePi();
+		// 版本预检(2026-10-12):查一次 registry,已是最新的工具就跳过对应更新命令。
+		// 实测全绿时整段自更新 37.5s -> 约 4-6s;任何不确定都退回"照旧更新"。
+		const pre = precheckEnabled() ? await runPrecheck(options, runner, piBin, shell) : undefined;
+		const skip: SkipFlags = { pi: pre?.pi === "up-to-date", extensions: pre?.extensions === "up-to-date", claude: pre?.claude === "up-to-date" };
+		const steps = planUpdateSteps({ piBin, gitBash: shell, skip });
 		// GUI 应用版本只用于摘要行,和更新步骤并行读(实测串行时白等 1.1s)
 		versionsPromise = readAppVersions({ shell });
-		const dsh = await planDshCliSteps(options.runner ?? execRunner, isInstalled("npm"), shell);
+		const dsh = planDshCliSteps(isInstalled("npm"), shell);
 		steps.push(...dsh.steps);
 		const say = options.onProgress ?? ((message: string) => process.stdout.write("[ais] " + message + "\n"));
+		const prefix = pre?.note ? ";" + pre.note : "";
+		if (steps.length === 0) {
+			// 没步骤可跑:环境不支持(没有 Git Bash)时静默;预检说"已是最新"时记时间并报告
+			if (!pre?.note) return undefined;
+			writePreflightState(statePath);
+			const versions = await versionsPromise;
+			return "[ais] 启动前自更新: 无需执行" + prefix + ";" + appVersionSummary(versions, dsh.status);
+		}
 		say("执行 " + steps.length + " 项更新…");
 		const result = await (options.runPreflight ?? preflight)({
 			steps,
@@ -155,7 +222,7 @@ export async function startPreflight(options: StartOptions = {}): Promise<string
 		const repair = failed.some((step) => step.label === "校验 pi 可执行")
 			? ";pi 本体起不来,修复:" + piUpdateCommand(resolvePi()) + " 然后重跑 config-ai/setup.sh"
 			: "";
-		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + ";" + appVersionSummary(versions, dsh.status) + repair;
+		return "[ais] 启动前自更新: " + result.summary + (failed.length ? "" : "(全部成功)") + prefix + ";" + appVersionSummary(versions, dsh.status) + repair;
 	} catch (error) {
 		// 版本读取可能还在飞:吞掉它的拒绝,免得变成未处理拒绝
 		await versionsPromise?.catch(() => undefined);

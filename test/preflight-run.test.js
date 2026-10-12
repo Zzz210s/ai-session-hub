@@ -37,21 +37,33 @@ test("pi 本体与扩展恒在,且都经 Git Bash 执行", () => {
 	const steps = planUpdateSteps({ piBin: "C:/x/pi.CMD", gitBash: BASH });
 	assert.ok(steps.length >= 2);
 	assert.equal(steps[0].label, "更新 pi 本体");
-	assert.equal(steps[1].label, "更新 pi 扩展");
-	for (const step of steps.slice(0, 2)) {
+	for (const step of steps.slice(0, 3)) {
 		assert.equal(step.command, BASH, "必须走 Git Bash(裸 bash 可能落到 WSL)");
 		assert.equal(step.args[0], "-lc");
-		assert.match(step.args[1], /"C:\/x\/pi\.CMD"/, "pi 路径要加引号");
+		assert.match(step.args[1], /"C:\/x\/pi\.CMD"|pnpm install -g/, "pi 路径要加引号");
 	}
 });
 
-test("pi 本体三步恒在:更新本体、更新扩展、校验可执行", () => {
+test("pi 三步:更新本体 -> 校验可执行 -> 更新扩展(校验紧跟安装)", () => {
 	const steps = planUpdateSteps({ piBin: "C:/x/pi.CMD", gitBash: BASH });
 	assert.deepEqual(
 		steps.slice(0, 3).map((step) => step.label),
-		["更新 pi 本体", "更新 pi 扩展", "校验 pi 可执行"],
+		["更新 pi 本体", "校验 pi 可执行", "更新 pi 扩展"],
 	);
-	assert.doesNotMatch(steps[2].args[1], /\|\| true$/, "校验必须是严格步骤:坏了要拦住 TTL 与提示");
+	assert.doesNotMatch(steps[1].args[1], /\|\| true$/, "校验必须是严格步骤:坏了要拦住 TTL 与提示");
+});
+
+test("预检说已是最新时,对应步骤真的被跳过", () => {
+	const all = planUpdateSteps({ piBin: "C:/x/pi.CMD", gitBash: BASH }).map((step) => step.label);
+	const labels = (skip) => planUpdateSteps({ piBin: "C:/x/pi.CMD", gitBash: BASH, skip }).map((step) => step.label);
+	assert.deepEqual(
+		labels({ pi: true }),
+		all.filter((l) => l !== "更新 pi 本体" && l !== "校验 pi 可执行"),
+		"跳过本体时校验也一起跳(没装东西就没什么可坏)",
+	);
+	assert.ok(!labels({ extensions: true }).includes("更新 pi 扩展"));
+	assert.ok(labels({ claude: true }).includes("更新 Claude 插件"), "只跳本体,插件更新照跑");
+	assert.ok(!labels({ claude: true }).includes("更新 Claude Code"));
 });
 
 test("piUpdateCommand:pnpm 装法交给包管理器,不让 pi 自己替换自己", () => {
@@ -107,21 +119,16 @@ test("planUpdateSteps:类 Unix 上用 $SHELL 执行,步骤与 Windows 一致", (
 	assert.match(steps[0].args[1], /"\/usr\/local\/bin\/pi" update/);
 });
 
-test("DSH CLI 步骤:查不到全局 CLI 就不排,查到才经 shell 排进 npm 组", async () => {
-	const missing = await planDshCliSteps(async () => ({ ok: false, out: "npm error\n@deepseek-ai/dsh\n" }), true, BASH);
-	assert.deepEqual(missing.steps, [], "退出码非 0(未安装)就不排,即使输出里回显了包名");
+test("DSH CLI 步骤:文件系统判定装没装,装了才经 shell 排进 npm 组", () => {
+	// 2026-10-12:判定改用文件系统(isInstalled),不再跑 `npm ls -g`(实测 2 秒)
+	const missing = planDshCliSteps(true, BASH, false);
+	assert.deepEqual(missing.steps, [], "没装 DSH CLI 就不排步骤");
 	assert.equal(missing.status, "not-installed");
-	const noNpm = await planDshCliSteps(async () => ({ ok: true, out: "" }), false, BASH);
+	const noNpm = planDshCliSteps(false, BASH, true);
 	assert.deepEqual(noNpm.steps, [], "没装 npm 就不排步骤");
 	assert.equal(noNpm.status, "npm-missing");
 
-	let calls = 0;
-	const hit = async () => {
-		calls += 1;
-		return { ok: true, out: "C:/x\n└── @deepseek-ai/dsh@0.2.0\n" };
-	};
-	const plan = await planDshCliSteps(hit, true, BASH);
-	assert.equal(calls, 1, "必须经注入的 runner 探测(测试不真的跑 npm)");
+	const plan = planDshCliSteps(true, BASH, true);
 	assert.equal(plan.status, "updated");
 	assert.equal(plan.steps.length, 1);
 	const step = plan.steps[0];
