@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { loadViews } from "../src/hub.ts";
-import { BOARD_MAX_AGE_MS } from "../src/views-cache.ts";
+import { BOARD_CACHE_STALE_MS, BOARD_MAX_AGE_MS } from "../src/views-cache.ts";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -86,6 +86,26 @@ test("超过最长陈旧时间也重扫,即使指纹没变", async () => {
 	const result = await loadViews({ ...old.options, viewsCachePath: oldPath });
 	assert.deepEqual(result.views.map((v) => v.id), ["ancient"], "先渲染旧的");
 	assert.ok(await waitFor(() => old.calls.scans === 1), "超过 60 秒应重扫");
+});
+
+test("隔几小时再开:仍用上次板面做首帧(不再空白),同时后台重扫", async () => {
+	// 2026-10-12:缓存窗口从 10 分钟放宽到 6 小时 —— 用户几乎总是隔几小时才开一次 ais,
+	// 旧窗口等于首帧永远空白,要等后台扫描才有内容
+	const path = boardCache([record("昨晚的板面")], { ageMs: 2 * 60 * 60 * 1000 });
+	const { calls, options } = harness({ scanResult: () => [record("今天")] });
+	const result = await loadViews({ ...options, viewsCachePath: path });
+	assert.deepEqual(result.views.map((v) => v.id), ["昨晚的板面"], "首帧要有内容(这是这次优化的目的)");
+	assert.ok(await waitFor(() => calls.scans === 1), "旧快照必须触发后台重扫,≤3 秒后就会被新数据替换");
+	assert.ok(await waitFor(() => cachedSessions(path).join() === "今天"), "重扫结果要回写缓存");
+});
+
+test("超过 6 小时的缓存视为没有:首帧给空板 + 后台扫描", async () => {
+	const path = boardCache([record("远古")], { ageMs: BOARD_CACHE_STALE_MS + 60_000 });
+	const { calls, options } = harness({ scanResult: () => [record("fresh")] });
+	// TUI 语义:neverBlockSessions → 没缓存时先给空板、后台补上(不阻塞首帧)
+	const result = await loadViews({ ...options, neverBlockSessions: true, viewsCachePath: path });
+	assert.deepEqual(result.views, [], "超过窗口不该拿旧数据充数");
+	assert.ok(await waitFor(() => calls.scans === 1), "应触发后台扫描");
 });
 
 test("不带 staleSessions:忽略缓存,直接扫描(CLI 语义)", async () => {

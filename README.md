@@ -377,6 +377,7 @@ The board refreshes every 3 seconds while the two expensive jobs are the session
 | Data | Churn | Strategy | Measured |
 |---|---|---|---|
 | Session list (scan result) | low (only on create/delete/new content) | structural fingerprint (session dir mtimes) + **20 s** ceiling; no rescan when unchanged, rescans run in a **worker thread** | 1 rescan per 20 refreshes |
+| Whole board (last session list) | low | persisted cache with a **6-hour** window: opening ais after hours still renders it as the first frame while a rescan runs in the background (replaced within ~3 s) | the first frame is never empty (the old 10-minute window meant it always was) |
 | Heartbeats + probe snapshot (running/working/waiting) | high | read fresh every time (~25 ms); the probe keeps its own 15 s snapshot cache | board state never lags |
 | Per-session-file parse | active sessions keep growing | cached by size+mtime, **incremental**: only the bytes appended since last read | cold 10-24 s -> **~2 s**, warm 0.2 s |
 
