@@ -99,7 +99,9 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | 3 | `claude update` · `claude plugin update` · `opencode upgrade` · `npm i -g @openai/codex@latest` · `npm i -g @google/gemini-cli@latest` | **best effort**: a step is only planned for an installed CLI, and a failure never blocks startup |
 
 - **GUI apps are version-probed only, on Windows**: Zed and DeepSeek Harness ship their own updaters, so ais reports their versions but never upgrades them — and only on Windows, where the probe reads the uninstall registry (on Linux no version is reported); a global `@deepseek-ai/dsh` CLI is added as a best-effort step only when installed (the summary says whether it was skipped or updated)
-- **No version comparison, but a 6-hour TTL**: the timestamp of the last fully successful run is kept in `~/.ai-session-hub/preflight-state.json`; while it is younger than the TTL the whole sequence is skipped with one line (`3.2 小时前检查过,跳过`), and once it expires everything runs again. Versions are **never** compared (that is fragile across install methods) — only the timestamp is read. Measured: full pass 10-14 s, skipped pass ~0.16 s (1 ms of that is the skip itself; the rest is Node boot). Use `AIS_UPDATE_TTL=0` to check on every launch, or `30m` / `2h` / `1d` / plain milliseconds (default `6h`). A failed step never writes the timestamp, so the next launch retries immediately
+- **Two layers of skipping, so a launch never waits through the whole sequence**:
+  1. **A 6-hour TTL**: the timestamp of the last fully successful run is kept in `~/.ai-session-hub/preflight-state.json`; while it is younger than the TTL the whole sequence is skipped with one line (`3.2 小时前检查过,跳过`). A failed step never writes the timestamp, so the next launch retries immediately. Use `AIS_UPDATE_TTL=0` to disable it, or `30m` / `2h` / `1d` / plain milliseconds (default `6h`)
+  2. **A version pre-check** (once the TTL has expired): one parallel registry lookup compares each local version against upstream `latest` (2-4 s) and **skips the update command for anything already current** — `pi itself` / `pi extensions` / `Claude Code` are decided independently. Measured: a fully up-to-date pass drops from 37-180 s to **about 5-7 s**; `AIS_UPDATE_PRECHECK=0` disables it. The pre-check **fails open**: anything unreadable, timed out or unparsable counts as "unknown" and its update still runs, so a broken check costs the old timing at worst — it never silently skips an update
 - **Standalone**: it only touches the CLIs and their plugins — it never `git pull`s another repo or runs someone else's `setup.sh` (pinned by `test/standalone.test.js`)
 - **Skip it**: `ais --no-update` or `AIS_NO_UPDATE=1 ais`
 - **Never blocks**: a failing step only shows up in the summary, e.g. `[ais] 启动前自更新: 3/4 步完成,失败: 更新 pi 扩展`
@@ -443,6 +445,7 @@ Cache controls:
 ais list --no-cache        # bypass both caches once
 AIS_CACHE=0 ais            # disable caching entirely
 AIS_LIVE_TTL_MS=3000       # live probe TTL (0 = always probe)
+AIS_UPDATE_PRECHECK=0      # disable the version pre-check (always run every update)
 AIS_LIVE_STALE_MS=60000    # how old a cached live snapshot may be for the first TUI frame
 AIS_SCAN_TTL_MS=0          # disable the per-file scan cache
 rm -rf ~/.ai-session-hub/cache   # clear
