@@ -36,7 +36,7 @@ export interface PrecheckResult {
 	pi: PrecheckVerdict;
 	extensions: PrecheckVerdict;
 	claude: PrecheckVerdict;
-	/** 摘要用的一句话,例如「已是最新: pi 本体 / pi 扩展」;没有跳过项时为 undefined */
+	/** 摘要文案,例如「已是最新: pi 本体 / pi 扩展」;没有跳过项时为 undefined */
 	note?: string;
 }
 
