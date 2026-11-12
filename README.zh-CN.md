@@ -2,7 +2,7 @@
 
 [English](./README.md) | **简体中文**
 
-主机级 **AI 会话总览与跳转**(TUI):一个键盘驱动的全屏看板,把本机上 pi / Claude Code / opencode 的**运行中会话**与**历史会话**汇总起来,分类标注,回车即**聚焦已有终端窗口**,或**就地接管终端继续**该会话。还把 **Zed** 与 **DeepSeek Harness** 两个 GUI 应用的会话一并列出(只读元数据;它们没有终端可接管)。
+主机级 **AI 会话总览与跳转**(TUI):一个键盘驱动的全屏看板,把本机上 pi / Claude Code / opencode 的**运行中会话**与**历史会话**汇总起来,分类标注,回车即**聚焦已有终端窗口**,或**在新窗口继续**该会话(窗口参数与本窗口一致)。还把 **Zed** 与 **DeepSeek Harness** 两个 GUI 应用的会话一并列出(只读元数据;它们没有终端可接管)。
 
 ```
  AI 会话总览                          共 42 | 运行中 3 | 需关注 1
@@ -16,10 +16,41 @@
                                   进程      pid 4242
                                   终端标签  窗口 12345 - 第 3 个
                                   会话文件  ~/.pi/agent/sessions/...jsonl
- a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出
+ a 新窗口继续 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出
 ```
 
 列表里**只保留工具名与会话名**(用 `/name` 命名过的会话名以**亮黄色**突出);目录、年龄、体积、进程号、终端标签、会话文件等全部放在右侧详情面板。
+
+
+## 打开方式与"窗口和本窗口一致"
+
+默认按 `a`(或 `ais resume`)是**开一个新窗口**,而不是把 CLI 托管在当前终端。窗口参数尽量与本窗口对齐:
+
+| 参数 | 来源 | 备注 |
+|---|---|---|
+| profile(配色/字体/字号) | 环境变量 `WT_PROFILE_ID` → Windows Terminal `settings.json` 里的名字 | 不在 WT 里跑时用 WT 默认 profile |
+| 列数 / 行数 | ConPTY 报给 `CONOUT$` 的窗格大小 | 输出被重定向时 `[Console]::WindowWidth` 是 0,故走 `CONOUT$` |
+| 窗口位置 / 最大化 | 沿父进程链找到的 WindowsTerminal 顶层窗口 | 找不到就交给 WT 自己决定 |
+| 环境变量 | `wt` 带 commandline 时默认 `--inheritEnvironment` | 终端进程的环境,不是 shell 里临时 export 的 |
+
+配置写在 `~/.ai-session-hub/config.json`(缺失或写坏都退回默认值):
+
+```json
+{
+  "open": {
+    "mode": "window",        // window 新窗口 | tab 当前窗口新标签 | attach 就地接管
+    "profile": "inherit",    // inherit 跟当前窗口,或写 profile 名
+    "geometry": "inherit",   // inherit 复制当前窗口尺寸位置 | none 交给 WT
+    "size": null,            // 覆盖项 "120,30"
+    "pos": null,             // 覆盖项 "100,80"
+    "maximized": null        // null 跟当前窗口 | true / false 强制
+  }
+}
+```
+
+临时覆盖用环境变量:`AIS_OPEN_MODE`、`AIS_OPEN_PROFILE`、`AIS_OPEN_GEOMETRY`、`AIS_OPEN_SIZE`、`AIS_OPEN_POS`、`AIS_OPEN_MAXIMIZED`。
+
+`mode` 与 WT 自带设置的关系:`wt` 的 `windowingBehavior` 只影响**不带 `-w`** 的调用;这里一律显式传 `-w new` 或 `-w 0`,所以不会被它改掉。
 
 ## 解决什么问题
 
@@ -33,7 +64,7 @@
 | 活性判定 | 心跳注册表(精确)> 终端标签标题匹配(定位标签)> 进程启动时间与会话创建时间接近(兜底) |
 | 状态标注 | 解析 pi-tab-status 的标签字形:`◐`思考中 / `▸`执行工具 / `_`等待输入 / `?`疑似卡住 / `×`出错 / `·`空闲;需关注的会话标 `!` 并可用 `2` 单独筛选 |
 | 聚焦窗口 | 经 UI Automation 选中对应的 Windows Terminal 标签并把窗口置前(实测可用) |
-| 就地继续(attach) | 让出终端,在前台运行 `pi --session <文件>` / `claude --resume <id>`;期间本程序**完全挂起**(停刷新、摘监听、退出 raw 模式),退出会话后自动回到看板 |
+| 打开会话 | 默认**开一个新窗口**(`wt -w new`),新窗口沿用当前窗口的 profile 与尺寸位置;会话在那边跑,本看板照常留在原地。想留在当前终端用 `Shift+A` 就地接管(attach),想挤在当前窗口开标签把 `open.mode` 设成 `tab` |
 | 复制命令 | 一键把恢复命令放进剪贴板 |
 | 实时刷新 | 3 秒轮询,内容变化才重绘(无闪烁) |
 | 拓展 | 核心可被拓展增强(**同页分屏**由拓展 [tui-panes](https://github.com/Zzz210s/tui-panes) 提供);核心不引用任何具体拓展,缺失时功能不受影响 |
@@ -109,7 +140,8 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 |---|---|
 | `↑` `↓` / `j` `k` / `ctrl+p` `ctrl+n` | 移动光标(选中行整行反显);`PageUp`/`PageDown` 翻页,`Home`/`End` 首尾 |
 | `Enter` | 智能:运行中→聚焦窗口;历史→就地继续 |
-| `a` | 就地继续(attach):前台接管终端运行该会话 |
+| `a` | 打开该会话:**新窗口**(profile / 尺寸 / 位置跟当前窗口一致,可配置) |
+| `Shift+A` | 就地接管终端(attach):前台运行该会话,退出后回到看板 |
 | `f` | 聚焦窗口(UIA 选中标签 + 置前) |
 | `c` | 复制恢复命令 |
 | `d` | 删除选中会话(需确认,见下) |
@@ -236,7 +268,7 @@ export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 
 现有拓展:[tui-panes](https://github.com/Zzz210s/tui-panes)(同页分屏)。
 
-**没装拓展就完全不出现拓展相关字样**:未加载任何拓展时,界面里不会出现"拓展/分屏/面板"等字样,底部只列核心键位;此时对历史会话按 Enter 只会提示"该会话未运行:按 a 接管终端继续"。拓展自己的键位提示(如 `Enter 分屏打开`)只在真正加载了拓展后才显示。
+**没装拓展就完全不出现拓展相关字样**:未加载任何拓展时,界面里不会出现"拓展/分屏/面板"等字样,底部只列核心键位;此时对历史会话按 Enter 只会提示"该会话未运行:按 a 在新窗口继续(Shift+a 就地接管)"。拓展自己的键位提示(如 `Enter 分屏打开`)只在真正加载了拓展后才显示。
 
 ## 架构
 
@@ -257,7 +289,11 @@ src/
 ├── scan/               会话采集:pi / claude / opencode / zed / dsh / io(头尾读 + 流式标记扫描)
 ├── live/               活体:windows(进程 + WT 标签,经 PowerShell/UIA)· heartbeat · correlate(纯)
 ├── tui-attach.ts       整屏接管流程(交出终端 → 前台运行 → 收回)
-└── actions.ts          聚焦 / 复制命令 / attach 命令构造
+├── open-window.ts      打开方式:新窗口 / 新标签、profile 与几何继承
+├── open-config.ts      ~/.ai-session-hub/config.json 的 open 段 + 环境变量覆盖
+├── console-geometry.ts 探测当前控制台的列行/位置/profile
+├── resume.ts           恢复命令与 CLI 路径解析
+└── actions.ts          聚焦 / 复制命令 / 就地接管
 integrations/           pi 心跳扩展 · Claude Code 心跳钩子
 scripts/                windows.ps1(枚举进程与标签)· focus.ps1(选中标签 + 置前)
 ```

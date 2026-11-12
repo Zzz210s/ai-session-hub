@@ -12,6 +12,7 @@ import type { ExtensionContext, HubExtension } from "./extensions.ts";
 import type { TuiScreen } from "./tui-screen.ts";
 import type { ActionKind } from "./tui-keys.ts";
 import { runAttach } from "./tui-attach.ts";
+import { openSession } from "./open-window.ts";
 
 export interface TuiActionDeps {
 	/** 当前筛选与搜索之后的可见行 */
@@ -38,6 +39,7 @@ export interface TuiActions {
 	selected: () => SessionView | undefined;
 	move: (delta: number) => void;
 	attach: (view: SessionView) => Promise<void>;
+	attachInPlace: (view: SessionView) => Promise<void>;
 	act: (kind: ActionKind) => Promise<void>;
 }
 
@@ -59,7 +61,12 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 		deps.redraw();
 	};
 
-	const attach = (view: SessionView): Promise<void> =>
+	// 默认"打开"= 开新窗口(可配置成新标签);就地接管保留给 A 键
+	const attach = async (view: SessionView): Promise<void> => {
+		const result = await openSession(view);
+		deps.notify(result.detail);
+	};
+	const attachInPlace = (view: SessionView): Promise<void> =>
 		runAttach(deps.screen, view, { reload: deps.reload, notify: deps.notify, redraw: deps.redraw });
 
 	const act = async (kind: ActionKind): Promise<void> => {
@@ -74,6 +81,7 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			return;
 		}
 		if (kind === "attach") return attach(view);
+		if (kind === "attach-inplace") return attachInPlace(view);
 		if (kind === "copy") {
 			deps.notify((await copyResumeCommand(view)).detail);
 		} else if (kind === "focus") {
@@ -84,10 +92,10 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			// 历史会话:交给拓展(如分屏)打开;没有拓展时提示可用 a 接管
 			const opener = deps.extensions.find((extension) => extension.openSelected);
 			if (opener?.openSelected) await opener.openSelected(deps.extensionContext());
-			else deps.notify("该会话未运行:按 a 接管终端继续");
+			else deps.notify("该会话未运行:按 a 在新窗口继续(Shift+a 就地接管)");
 		}
 		deps.redraw();
 	};
 
-	return { selected, move, attach, act };
+	return { selected, move, attach, attachInPlace, act };
 }

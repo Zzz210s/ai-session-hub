@@ -2,11 +2,11 @@
 /**
  * ais — AI 会话总览与跳转 CLI
  *
- *   ais                  交互式选择器(运行中优先聚焦已有标签,否则新标签恢复)
+ *   ais                  交互式选择器(运行中优先聚焦已有标签,否则按配置开新窗口)
  *   ais list [--json]    列表输出
  *   ais doctor           探测诊断(各工具会话数、活体进程、终端标签、心跳)
  *   ais focus <查询>     聚焦匹配到的运行中会话
- *   ais resume <查询>    在新标签恢复匹配到的会话
+ *   ais resume <查询>    按配置打开匹配到的会话(默认新窗口;AIS_OPEN_MODE=window|tab|attach)
  *   ais delete <查询>    删除会话(默认只预览;--yes 执行,移入回收目录可恢复)
  */
 
@@ -29,7 +29,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { printDoctor } from "./doctor.ts";
 import { parseArgs } from "./args.ts";
-import { focusSession, resumeInNewTab } from "./actions.ts";
+import { focusSession } from "./actions.ts";
+import { openSession } from "./open-window.ts";
 import { runTui } from "./tui.ts";
 import { deleteSession, planDelete, trashDir } from "./delete.ts";
 import { flushScanCache } from "./scan/cache.ts";
@@ -144,7 +145,7 @@ async function main(): Promise<void> {
 			process.exitCode = 1;
 			return;
 		}
-		const result = args.command === "focus" ? await focusSession(target) : resumeInNewTab(target);
+		const result = args.command === "focus" ? await focusSession(target) : await openSession(target);
 		console.log(`${result.ok ? "OK" : "FAIL"} ${title(target)}: ${result.detail}`);
 		process.exitCode = result.ok ? 0 : 1;
 		return;

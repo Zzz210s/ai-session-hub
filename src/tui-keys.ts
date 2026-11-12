@@ -5,7 +5,7 @@
 import type { KeyName } from "./keys.ts";
 import type { FilterKind } from "./tui-view.ts";
 
-export type ActionKind = "smart" | "attach" | "focus" | "copy";
+export type ActionKind = "smart" | "attach" | "attach-inplace" | "focus" | "copy";
 
 /**
  * 拓展键钩子:核心只负责把按键交给拓展(如 tui-panes 的分屏),不关心其语义。
@@ -77,6 +77,7 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 			return;
 		}
 		if (ch === "a") return void ctx.act("attach");
+		if (ch === "A") return void ctx.act("attach-inplace");
 		if (ch === "f") return void ctx.act("focus");
 		if (ch === "c") return void ctx.act("copy");
 		if (ch === "d") return ctx.requestDelete();

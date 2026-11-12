@@ -16,10 +16,41 @@ A host-level **AI session overview** for your terminal (TUI): one keyboard-drive
                                   进程      pid 4242
                                   终端标签  窗口 12345 - 第 3 个
                                   会话文件  ~/.pi/agent/sessions/...jsonl
- a 接管终端 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出
+ a open in a new window | f focus window | c copy | d delete | r refresh | 1-4 filter | / search | q quit
 ```
 
 The list keeps only **tool + session name** (names you set with `/name` are highlighted in bright yellow); everything else — directory, age, size, pid, terminal tab, session file — lives in the right-hand detail pane.
+
+
+## Open mode: new window that matches the current one
+
+Pressing `a` (or running `ais resume`) now opens a **new window** instead of hosting the CLI in the current terminal. The new window is made to look like the one you launched from:
+
+| Property | Source | Notes |
+|---|---|---|
+| profile (scheme / font / size) | `WT_PROFILE_ID` env var → profile name in Windows Terminal `settings.json` | falls back to WT's default profile outside WT |
+| columns / rows | pane size reported by ConPTY via `CONOUT$` | `[Console]::WindowWidth` returns 0 when stdout is redirected |
+| position / maximized | the WindowsTerminal top-level window found by walking the parent process chain | left to WT when it cannot be found |
+| environment | `wt` defaults to `--inheritEnvironment` when a command line is passed | that is the terminal's env, not variables exported inside the shell |
+
+Configured in `~/.ai-session-hub/config.json` (missing or malformed file falls back to defaults):
+
+```json
+{
+  "open": {
+    "mode": "window",        // window | tab | attach
+    "profile": "inherit",    // "inherit" or a profile name
+    "geometry": "inherit",   // "inherit" copies size/position | "none" lets WT decide
+    "size": null,            // override, e.g. "120,30"
+    "pos": null,             // override, e.g. "100,80"
+    "maximized": null        // null follows the current window; true / false forces
+  }
+}
+```
+
+Environment overrides: `AIS_OPEN_MODE`, `AIS_OPEN_PROFILE`, `AIS_OPEN_GEOMETRY`, `AIS_OPEN_SIZE`, `AIS_OPEN_POS`, `AIS_OPEN_MAXIMIZED`.
+
+WT's own `windowingBehavior` setting only affects calls **without** `-w`; ais always passes `-w new` or `-w 0` explicitly, so that setting cannot override the mode.
 
 ## The problem
 
@@ -36,7 +67,7 @@ This tool fills that gap: it discovers sessions you already started, annotates t
 | Status annotation | parses the glyph written by pi-tab-status into `*` thinking / `>` running a tool / `\|` waiting / `?` possibly stalled / `x` error / `.` idle; sessions needing you are flagged `!` and can be filtered with `2` |
 | Focus window | selects the matching Windows Terminal tab via UI Automation and brings the window forward |
 | Split panes (**provided by an extension**) | several sessions running side by side in the same page: each pane is a real PTY whose output is emulated and composed into this program (engine: the [tui-panes](https://github.com/Zzz210s/tui-panes) extension) |
-| Hand over terminal (attach) | runs `pi --session <file>` / `claude --resume <id>` in the foreground; this program **fully suspends itself** meanwhile and resumes when the session exits |
+| Open session | spawns a **new Windows Terminal window** (`wt -w new`) that inherits the current window's profile, size and position; the board stays where it is. `Shift+A` still hands the current terminal over (attach), and `open.mode: "tab"` opens a tab in the current window instead |
 | Copy resume command | one key to put the exact command on your clipboard |
 | Live refresh | 3-second poll; redraws only when the composed screen actually changes |
 | Extensions | the core can be extended (split panes come from the [tui-panes](https://github.com/Zzz210s/tui-panes) extension); the core references no concrete extension and works fine without any |
@@ -114,7 +145,8 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 |---|---|
 | `↑` `↓` / `j` `k` / `ctrl+p` `ctrl+n` | move the cursor (the selected row is highlighted full-width); `PageUp`/`PageDown` page, `Home`/`End` jump |
 | `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
-| `a` | hand the terminal over to the session (attach); exits back to the board when the session ends |
+| `a` | open the session in a **new window** (profile / size / position copied from the current window, configurable) |
+| `Shift+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
 | `x` / `Ctrl+W` | close a pane; `Ctrl+Q` returns focus from a pane to the list |
@@ -243,7 +275,7 @@ An extension is a plain module (usually a package/repo) exporting `createHubExte
 
 Available extensions: [tui-panes](https://github.com/Zzz210s/tui-panes) (same-page split panes).
 
-**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
+**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to open it in a new window, `Shift+A` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
 
 ## Architecture
 
@@ -265,7 +297,11 @@ src/
 ├── live/             liveness: windows.ts (processes + WT tabs via PowerShell/UIA) · heartbeat.ts · correlate.ts (pure)
 ├── panes.ts          adapter to the optional tui-panes engine
 ├── tui-attach.ts     full-terminal hand-over flow
-└── actions.ts        focus / copy / attach command construction
+├── open-window.ts    open modes: new window / new tab, profile + geometry inheritance
+├── open-config.ts    `open` section of ~/.ai-session-hub/config.json + env overrides
+├── console-geometry.ts  probe the current console (cols/rows/pos/profile)
+├── resume.ts         resume command + CLI path resolution
+└── actions.ts        focus / copy / attach
 integrations/         pi heartbeat extension · Claude Code heartbeat hook
 scripts/              windows.ps1 (enumerate processes & WT tabs) · focus.ps1 (select tab + bring window forward)
 ```

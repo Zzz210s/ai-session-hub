@@ -61,7 +61,7 @@ test("act:没有可见行时什么都不做", async () => {
 test("act(smart):历史会话没有拓展可开时给兜底提示", async () => {
 	const { actions, calls } = harness([row("a")]);
 	await actions.act("smart");
-	assert.deepEqual(calls.notify, ["该会话未运行:按 a 接管终端继续"]);
+	assert.deepEqual(calls.notify, ["该会话未运行:按 a 在新窗口继续(Shift+a 就地接管)"]);
 	assert.equal(calls.redraw, 1);
 });
 
