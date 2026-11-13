@@ -54,7 +54,8 @@ export function resolveCliCommand(tool: SessionView["tool"]): string {
 export function resumeCommand(view: SessionView): string {
 	switch (view.tool) {
 		case "pi":
-			return `${resolveCliCommand("pi")} --session "${view.file}"`;
+			// 缺会话文件时不能拼出 --session "undefined":那样会在新窗口里报错,还看不出原因
+			return view.file ? `${resolveCliCommand("pi")} --session "${view.file}"` : "";
 		case "claude":
 			return `${resolveCliCommand("claude")} --resume ${view.id}`;
 		case "opencode":

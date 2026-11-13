@@ -119,3 +119,12 @@ test("act:GUI 会话按 c 复制会话信息(而不是恢复命令)", async () =
 	assert.deepEqual(copied, ["t1"]);
 	assert.deepEqual(calls.notify, ["已复制: 会话信息"]);
 });
+
+test("act(attach):不支持的会话类型只提示,不抛异常(防止 unhandled rejection 把看板带走)", async () => {
+	// dsh/zed 之类 GUI 会话走 openSession 的"暂不支持"分支:不 spawn 任何进程,可以放心单测
+	const gui = { tool: "dsh", kind: "cli", id: "d1", name: "DSH", state: "stored", attention: false };
+	const { actions, calls } = harness([gui]);
+	await actions.act("attach");
+	assert.equal(calls.notify.length, 1);
+	assert.match(calls.notify[0], /暂不支持|打开失败/);
+});

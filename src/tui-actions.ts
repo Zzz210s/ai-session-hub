@@ -62,9 +62,16 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 	};
 
 	// 默认"打开"= 开新窗口(可配置成新标签);就地接管保留给 A 键
+	// 任何异常都必须落到提示行:action 是 `void ctx.act(...)` 调用的,抛出去就是
+	// unhandled rejection —— Node 24 会直接终止进程,表现就是"看板闪一下就没了"
 	const attach = async (view: SessionView): Promise<void> => {
-		const result = await openSession(view);
-		deps.notify(result.detail);
+		try {
+			const result = await openSession(view);
+			deps.notify(result.detail);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			deps.notify(`打开失败: ${message}(按 c 复制命令可手动执行)`);
+		}
 	};
 	const attachInPlace = (view: SessionView): Promise<void> =>
 		runAttach(deps.screen, view, { reload: deps.reload, notify: deps.notify, redraw: deps.redraw });
@@ -72,6 +79,15 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 	const act = async (kind: ActionKind): Promise<void> => {
 		const view = selected();
 		if (!view) return;
+		try {
+			await run(kind, view);
+		} catch (error) {
+			deps.notify(`操作失败: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		deps.redraw();
+	};
+
+	const run = async (kind: ActionKind, view: SessionView): Promise<void> => {
 		// GUI 会话走窗口分支:smart/focus 都聚焦窗口,attach 没有终端可接管,copy 复制的是说明
 		if (view.kind === "gui") {
 			if (kind === "attach") deps.notify(guiNoTerminalMessage(view.tool));
@@ -80,7 +96,15 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			deps.redraw();
 			return;
 		}
-		if (kind === "attach") return attach(view);
+		if (kind === "attach") {
+			// 正在运行的会话:再开一个进程去 resume 同一份会话文件,pi/claude 会报占用/写坏历史,
+			// 所以这里只切窗口;真要另开一份用 c 复制命令手动来
+			if (view.state === "running" && view.live?.tab) {
+				deps.notify(`该会话正在运行,已切到它的窗口(另开一份请按 c 复制命令): ${(await focusSession(view)).detail}`);
+				return;
+			}
+			return attach(view);
+		}
 		if (kind === "attach-inplace") return attachInPlace(view);
 		if (kind === "copy") {
 			deps.notify((await copyResumeCommand(view)).detail);
@@ -94,7 +118,6 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			if (opener?.openSelected) await opener.openSelected(deps.extensionContext());
 			else deps.notify("该会话未运行:按 a 在新窗口继续(Shift+a 就地接管)");
 		}
-		deps.redraw();
 	};
 
 	return { selected, move, attach, attachInPlace, act };

@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyEnvOverrides, DEFAULT_OPEN, readOpenConfig } from "../src/open-config.ts";
-import { buildWtArgs, resolveGeometry, resolveProfile } from "../src/open-window.ts";
+import { buildWtArgs, resolveGeometry, resolveProfile, sanitizePair } from "../src/open-window.ts";
 
 const geometry = { cols: 120, rows: 30, x: 70, y: 77, width: 1199, height: 616, maximized: false, profile: "Cmder" };
 
@@ -105,4 +105,18 @@ test("环境变量写错值时不生效(保持配置文件口径)", () => {
 	const config = applyEnvOverrides(DEFAULT_OPEN, { AIS_OPEN_MODE: "split", AIS_OPEN_GEOMETRY: "maybe" });
 	assert.equal(config.mode, DEFAULT_OPEN.mode);
 	assert.equal(config.geometry, DEFAULT_OPEN.geometry);
+});
+
+test("几何值非法时丢弃(否则 wt 会去启动一个叫 100,25 的程序)", () => {
+	assert.equal(sanitizePair("120,30", 10, 500), "120,30");
+	assert.equal(sanitizePair("0,0", 10, 500), null);
+	assert.equal(sanitizePair("abc", 10, 500), null);
+	assert.equal(sanitizePair("120", 10, 500), null);
+	assert.equal(sanitizePair("9999,30", 10, 500), null);
+	assert.equal(sanitizePair(null, 10, 500), null);
+});
+
+test("探测到 0 列 0 行时不继承(交给 WT 默认)", () => {
+	const zero = { cols: 0, rows: 0, x: 0, y: 0, width: 0, height: 0, maximized: false, profile: "" };
+	assert.deepEqual(resolveGeometry(DEFAULT_OPEN, zero), { size: null, pos: null, maximized: false });
 });

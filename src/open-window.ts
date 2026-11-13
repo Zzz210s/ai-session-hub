@@ -11,6 +11,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { ActionResult } from "./actions.ts";
 import { probeConsoleGeometry, type ConsoleGeometry } from "./console-geometry.ts";
 import { openInNewTerminal } from "./live/linux-focus.ts";
@@ -62,14 +63,22 @@ export interface GeometryArgs {
 	maximized: boolean | null;
 }
 
+/** `"120,30"` 这类值先过一遍格式校验:wt 拿到非法值会去启动一个同名程序,报 0x80070002 */
+export function sanitizePair(value: string | null, min: number, max: number): string | null {
+	if (!value) return null;
+	const parts = value.split(",").map((part) => Number.parseInt(part.trim(), 10));
+	if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n) || n < min || n > max)) return null;
+	return `${parts[0]},${parts[1]}`;
+}
+
 /** 尺寸/位置/最大化:配置显式值优先,其次继承当前窗口,探测失败就交给 WT 自己决定 */
 export function resolveGeometry(config: OpenConfig, geometry: ConsoleGeometry | null): GeometryArgs {
 	const inherit = config.geometry === "inherit" && geometry !== null;
 	const probedSize = geometry && geometry.cols > 0 && geometry.rows > 0 ? `${geometry.cols},${geometry.rows}` : null;
 	const probedPos = geometry && (geometry.x !== 0 || geometry.y !== 0) ? `${geometry.x},${geometry.y}` : null;
 	return {
-		size: config.size ?? (inherit ? probedSize : null),
-		pos: config.pos ?? (inherit ? probedPos : null),
+		size: sanitizePair(config.size ?? (inherit ? probedSize : null), 10, 500),
+		pos: sanitizePair(config.pos ?? (inherit ? probedPos : null), -20000, 20000),
 		maximized: config.maximized ?? (inherit ? (geometry?.maximized ?? null) : null),
 	};
 }
@@ -88,7 +97,8 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	const config = options.config ?? loadOpenConfig();
 	const command = resumeCommand(view);
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool} 的恢复命令` };
-	const cwd = view.cwd && view.cwd.length > 0 ? view.cwd : process.cwd();
+	const rawCwd = view.cwd && view.cwd.length > 0 ? view.cwd : process.cwd();
+	const cwd = existsSync(rawCwd) ? rawCwd : process.cwd();
 	const title = sessionTitle(view);
 	const shell = resolveShell();
 	const args = shellArgs(shell, command, { keepAlive: true }).command;
