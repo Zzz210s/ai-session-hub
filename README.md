@@ -16,15 +16,15 @@ A host-level **AI session overview** for your terminal (TUI): one keyboard-drive
                                   进程      pid 4242
                                   终端标签  窗口 12345 - 第 3 个
                                   会话文件  ~/.pi/agent/sessions/...jsonl
- a open in a new window | f focus window | c copy | d delete | r refresh | 1-4 filter | / search | q quit
+ a open in a new tab | f focus window | c copy | d delete | r refresh | 1-4 filter | / search | q quit
 ```
 
 The list keeps only **tool + session name** (names you set with `/name` are highlighted in bright yellow); everything else — directory, age, size, pid, terminal tab, session file — lives in the right-hand detail pane.
 
 
-## Open mode: new window that matches the current one
+## Open mode: a tab in the current window by default
 
-Pressing `a` (or running `ais resume`) now opens a **new window** instead of hosting the CLI in the current terminal. The new window is made to look like the one you launched from:
+Pressing `a` (or running `ais resume`) opens a **new tab in the current window** by default instead of hosting the CLI in the current terminal. With `open.mode: "window"` it opens a separate window instead, made to look like the one you launched from:
 
 | Property | Source | Notes |
 |---|---|---|
@@ -38,7 +38,7 @@ Configured in `~/.ai-session-hub/config.json` (missing or malformed file falls b
 ```json
 {
   "open": {
-    "mode": "window",        // window | tab | attach
+    "mode": "tab",           // tab (default) | window | attach
     "profile": "inherit",    // "inherit" or a profile name
     "geometry": "inherit",   // "inherit" copies size/position | "none" lets WT decide
     "size": null,            // override, e.g. "120,30"
@@ -67,7 +67,7 @@ This tool fills that gap: it discovers sessions you already started, annotates t
 | Status annotation | parses the glyph written by pi-tab-status into `*` thinking / `>` running a tool / `\|` waiting / `?` possibly stalled / `x` error / `.` idle; sessions needing you are flagged `!` and can be filtered with `2` |
 | Focus window | selects the matching Windows Terminal tab via UI Automation and brings the window forward |
 | Split panes (**provided by an extension**) | several sessions running side by side in the same page: each pane is a real PTY whose output is emulated and composed into this program (engine: the [tui-panes](https://github.com/Zzz210s/tui-panes) extension) |
-| Open session | spawns a **new Windows Terminal window** (`wt -w new`) that inherits the current window's profile, size and position; the board stays where it is. `Shift+A` still hands the current terminal over (attach), and `open.mode: "tab"` opens a tab in the current window instead |
+| Open session | opens a **new tab in the current window** (`wt -w 0`) — ais runs in that window, so it is the most recently used one. Set `open.mode: "window"` for a separate window (which then inherits the current profile, size and position). `Shift+A` still hands the current terminal over (attach) |
 | Copy resume command | one key to put the exact command on your clipboard |
 | Live refresh | 3-second poll; redraws only when the composed screen actually changes |
 | Extensions | the core can be extended (split panes come from the [tui-panes](https://github.com/Zzz210s/tui-panes) extension); the core references no concrete extension and works fine without any |
@@ -145,7 +145,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 |---|---|
 | `↑` `↓` / `j` `k` / `ctrl+p` `ctrl+n` | move the cursor (the selected row is highlighted full-width); `PageUp`/`PageDown` page, `Home`/`End` jump |
 | `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
-| `a` | open the session in a **new window** (profile / size / position copied from the current window, configurable) |
+| `a` | open the session in a **new tab of the current window** (configurable) |
 | `Shift+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
@@ -275,7 +275,7 @@ An extension is a plain module (usually a package/repo) exporting `createHubExte
 
 Available extensions: [tui-panes](https://github.com/Zzz210s/tui-panes) (same-page split panes).
 
-**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to open it in a new window, `Shift+A` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
+**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to open it in a new tab, `Shift+A` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
 
 ## Architecture
 

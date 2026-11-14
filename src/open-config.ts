@@ -13,7 +13,7 @@ export type OpenMode = "window" | "tab" | "attach";
 export type GeometryMode = "inherit" | "none";
 
 export interface OpenConfig {
-	/** window=新窗口(默认) / tab=当前窗口新标签 / attach=就地接管当前终端 */
+	/** tab=当前窗口新标签(默认) / window=新窗口 / attach=就地接管当前终端 */
 	mode: OpenMode;
 	/** inherit=跟当前窗口同一个 profile;也可写 profile 名 */
 	profile: string;
@@ -28,7 +28,9 @@ export interface OpenConfig {
 }
 
 export const DEFAULT_OPEN: OpenConfig = {
-	mode: "window",
+	// 默认在 ais 所在窗口开新标签:ais 自己就在那个窗口里,按 a 时它是"最近使用的窗口",
+	// 所以 `wt -w 0` 会把标签加回同一个窗口,不会另开一个
+	mode: "tab",
 	profile: "inherit",
 	geometry: "inherit",
 	size: null,

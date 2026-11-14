@@ -71,7 +71,7 @@ test("renderScreen:包含标题栏、统计、筛选、会话行与提示", () =
 	assert.match(text[1], /1 运行中 1/);
 	assert.match(text.join("\n"), /运行中的/);
 	assert.match(text.join("\n"), /历史的/);
-	assert.match(text[text.length - 1], /a 新窗口继续/);
+	assert.match(text[text.length - 1], /a 新标签继续/);
 	assert.equal(lines.length, 20);
 });
 

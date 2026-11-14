@@ -118,14 +118,21 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	const geometry = options.geometry === undefined ? await probeConsoleGeometry() : options.geometry;
 	const profile = resolveProfile(config, geometry);
 	const size = resolveGeometry(config, geometry);
-	const mode: "window" | "tab" = config.mode === "tab" ? "tab" : "window";
-	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...size });
+	const mode: "window" | "tab" = config.mode === "window" ? "window" : "tab";
+	// 尺寸/位置/最大化只对新窗口有意义;往已有窗口加标签时传了会被忽略(个别版本还会报错)
+	const geometryArgs = mode === "window" ? size : { size: null, pos: null, maximized: null };
+	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...geometryArgs });
 	try {
 		const child = spawn("wt.exe", wtArgs, { detached: true, stdio: "ignore", windowsHide: false });
 		child.unref();
 		const where = mode === "window" ? "新窗口" : "当前窗口新标签";
 		const profileText = profile ? `profile=${profile}` : "WT 默认 profile";
-		const sizeText = size.maximized ? "最大化" : [size.size && `${size.size} 列行`, size.pos && `位置 ${size.pos}`].filter(Boolean).join(" / ");
+		const sizeText =
+			mode === "window"
+				? geometryArgs.maximized
+					? "最大化"
+					: [geometryArgs.size && `${geometryArgs.size} 列行`, geometryArgs.pos && `位置 ${geometryArgs.pos}`].filter(Boolean).join(" / ")
+				: "";
 		return { ok: true, detail: `已在${where}启动(${profileText}${sizeText ? `,${sizeText}` : ""}): ${command}` };
 	} catch (error) {
 		return { ok: false, detail: `启动失败: ${error instanceof Error ? error.message : String(error)}` };

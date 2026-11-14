@@ -131,3 +131,9 @@ test("交给 wt 的命令里不能出现分号(WT 会把 `;` 当自己的命令�
 	const wt = buildWtArgs({ ...base, shellArgs: bash });
 	for (const arg of wt) assert.equal(arg.includes(";"), false, `wt 参数不该有分号: ${arg}`);
 });
+
+test("默认就是开当前窗口的新标签(ais 自己就在那个窗口里)", () => {
+	assert.equal(DEFAULT_OPEN.mode, "tab");
+	const args = buildWtArgs({ ...base, mode: "tab" });
+	assert.deepEqual(args.slice(0, 2), ["-w", "0"]);
+});
