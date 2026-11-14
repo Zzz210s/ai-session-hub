@@ -33,6 +33,8 @@ export interface TuiActionDeps {
 	focusApp?: (tool: Tool) => Promise<ActionResult>;
 	/** GUI 会话复制会话信息(测试注入,默认真实现) */
 	copySessionInfo?: (view: SessionView) => Promise<ActionResult>;
+	/** 打开会话(测试注入,默认真实现 openSession) */
+	openSession?: (view: SessionView) => Promise<ActionResult>;
 }
 
 export interface TuiActions {
@@ -66,7 +68,7 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 	// unhandled rejection —— Node 24 会直接终止进程,表现就是"看板闪一下就没了"
 	const attach = async (view: SessionView): Promise<void> => {
 		try {
-			const result = await openSession(view);
+			const result = await (deps.openSession ?? openSession)(view);
 			deps.notify(result.detail);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

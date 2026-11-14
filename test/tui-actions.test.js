@@ -128,3 +128,32 @@ test("act(attach):不支持的会话类型只提示,不抛异常(防止 unhandle
 	assert.equal(calls.notify.length, 1);
 	assert.match(calls.notify[0], /暂不支持|打开失败/);
 });
+
+test("act(attach):把选中会话交给 openSession,并把结果写进提示行", async () => {
+	const rows = [{ tool: "pi", kind: "cli", id: "s1", name: "历史会话", state: "stored", attention: false, file: "C:/sessions/s1.jsonl" }];
+	const seen = [];
+	const { actions, calls } = harness(rows, {
+		openSession: async (view) => {
+			seen.push(view.id);
+			return { ok: true, detail: "已在新窗口启动: pi --session s1.jsonl" };
+		},
+	});
+	await actions.act("attach");
+	assert.deepEqual(seen, ["s1"]);
+	assert.equal(calls.notify.pop(), "已在新窗口启动: pi --session s1.jsonl");
+});
+
+test("act(attach):运行中的会话只切窗口,不重复 resume", async () => {
+	const rows = [{ tool: "pi", kind: "cli", id: "r1", name: "运行中", state: "running", attention: false, live: { tab: { windowPid: 1, index: 0, title: "x", selected: true, hwnd: "1", windowTitle: "" } } }];
+	let opened = 0;
+	const { actions, calls } = harness(rows, {
+		openSession: async () => {
+			opened++;
+			return { ok: true, detail: "opened" };
+		},
+		focusApp: async () => ({ ok: true, detail: "focused" }),
+	});
+	await actions.act("attach");
+	assert.equal(opened, 0, "不该再起一个进程");
+	assert.match(calls.notify.pop(), /正在运行/);
+});
