@@ -13,7 +13,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { ActionResult } from "./actions.ts";
-import { probeConsoleGeometry, type ConsoleGeometry } from "./console-geometry.ts";
+import { probeConsoleGeometry, profileNameFromEnv, type ConsoleGeometry } from "./console-geometry.ts";
 import { openInNewTerminal } from "./live/linux-focus.ts";
 import type { SessionView } from "./model.ts";
 import type { OpenConfig } from "./open-config.ts";
@@ -54,10 +54,10 @@ export function buildWtArgs(input: WtArgsInput): string[] {
 	return args;
 }
 
-/** profile:配置里写了名字就用名字,否则继承当前窗口(探测到的) */
-export function resolveProfile(config: OpenConfig, geometry: ConsoleGeometry | null): string {
+/** profile:配置里写了名字就用名字;否则先读 WT_PROFILE_ID(零成本、不会超时),再退回探测结果 */
+export function resolveProfile(config: OpenConfig, geometry: ConsoleGeometry | null, envProfile = ""): string {
 	if (config.profile && config.profile !== "inherit") return config.profile;
-	return geometry?.profile ?? "";
+	return envProfile || geometry?.profile || "";
 }
 
 export interface GeometryArgs {
@@ -93,6 +93,8 @@ function sessionTitle(view: SessionView): string {
 export interface OpenOptions {
 	config?: OpenConfig;
 	geometry?: ConsoleGeometry | null;
+	/** 当前 WT profile 名(测试注入;默认从 WT_PROFILE_ID 读) */
+	envProfile?: string;
 }
 
 /** 按配置打开会话(window/tab)。attach 模式不在这里处理,交给 runAttach。 */
@@ -115,10 +117,11 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 		return opened.ok ? { ok: true, detail: `${opened.detail}: ${command}` } : opened;
 	}
 
-	const geometry = options.geometry === undefined ? await probeConsoleGeometry() : options.geometry;
-	const profile = resolveProfile(config, geometry);
-	const size = resolveGeometry(config, geometry);
 	const mode: "window" | "tab" = config.mode === "window" ? "window" : "tab";
+	// 标签模式下尺寸/位置根本用不上,别为了它们跑一次 powershell 探测(慢,还可能超时)
+	const geometry = mode === "tab" ? null : options.geometry === undefined ? await probeConsoleGeometry() : options.geometry;
+	const profile = resolveProfile(config, geometry, options.envProfile ?? profileNameFromEnv());
+	const size = resolveGeometry(config, geometry);
 	// 尺寸/位置/最大化只对新窗口有意义;往已有窗口加标签时传了会被忽略(个别版本还会报错)
 	const geometryArgs = mode === "window" ? size : { size: null, pos: null, maximized: null };
 	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...geometryArgs });

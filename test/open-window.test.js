@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { applyEnvOverrides, DEFAULT_OPEN, readOpenConfig } from "../src/open-config.ts";
 import { buildWtArgs, resolveGeometry, resolveProfile, sanitizePair } from "../src/open-window.ts";
 import { shellArgs } from "../src/shell.ts";
+import { profileNameFromEnv } from "../src/console-geometry.ts";
 
 const geometry = { cols: 120, rows: 30, x: 70, y: 77, width: 1199, height: 616, maximized: false, profile: "Cmder" };
 
@@ -136,4 +137,20 @@ test("默认就是开当前窗口的新标签(ais 自己就在那个窗口里)",
 	assert.equal(DEFAULT_OPEN.mode, "tab");
 	const args = buildWtArgs({ ...base, mode: "tab" });
 	assert.deepEqual(args.slice(0, 2), ["-w", "0"]);
+});
+
+test("profile 名直接从 WT_PROFILE_ID 解出(不跑 powershell,也就不会超时退化成默认 profile)", () => {
+	const settings = JSON.stringify({
+		profiles: { list: [{ name: "Cmder · Claude", guid: "{8AC0556A-DFAA-4100-BF4D-B80DEA441451}" }, { name: "Windows PowerShell", guid: "{61C54BBD-C2C6-5271-96E7-009A87FF44BF}" }] },
+	});
+	const env = { WT_PROFILE_ID: "{8ac0556a-dfaa-4100-bf4d-b80dea441451}", LOCALAPPDATA: "C:/fake" };
+	const name = profileNameFromEnv(env, () => "﻿" + settings);
+	assert.equal(name, "Cmder · Claude");
+	assert.equal(profileNameFromEnv({}, () => settings), "", "不在 WT 里跑时为空");
+});
+
+test("resolveProfile:配置优先,其次环境变量,最后才是探测结果", () => {
+	assert.equal(resolveProfile({ ...DEFAULT_OPEN, profile: "Ubuntu" }, geometry, "Cmder"), "Ubuntu");
+	assert.equal(resolveProfile(DEFAULT_OPEN, null, "Cmder"), "Cmder");
+	assert.equal(resolveProfile(DEFAULT_OPEN, geometry, ""), "Cmder");
 });

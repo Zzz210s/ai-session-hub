@@ -9,7 +9,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,6 +55,54 @@ export function parseGeometry(raw: string): ConsoleGeometry | null {
 	} catch {
 		return null;
 	}
+}
+
+
+/**
+ * 从环境变量直接解出当前 Windows Terminal profile 名。
+ *
+ * 为什么不靠 PowerShell 探测:探测要跑一次 powershell(几百毫秒到几秒,还可能超时),
+ * 一旦失败 profile 就是空串 —— 于是新标签落到 WT 的**默认 profile**(用户看到的就是
+ * "在 Cmder 里按 a,开出来却是 PowerShell")。而 WT_PROFILE_ID 永远在环境里,读它零成本。
+ */
+export function profileNameFromEnv(
+	env: NodeJS.ProcessEnv = process.env,
+	readFile: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): string {
+	const guid = (env.WT_PROFILE_ID ?? "").trim().toLowerCase();
+	if (!guid) return "";
+	const local = env.LOCALAPPDATA ?? "";
+	const candidates: string[] = [];
+	if (local) {
+		candidates.push(join(local, "Microsoft", "Windows Terminal", "settings.json"));
+		const packages = join(local, "Packages");
+		try {
+			for (const entry of readdirSync(packages)) {
+				if (!/^Microsoft\.WindowsTerminal/i.test(entry)) continue;
+				candidates.push(join(packages, entry, "LocalState", "settings.json"));
+			}
+		} catch {
+			/* 没有 Packages 目录就只看经典路径 */
+		}
+	}
+	for (const path of candidates) {
+		let raw: string;
+		try {
+			raw = readFile(path);
+		} catch {
+			continue;
+		}
+		try {
+			// WT 的 settings.json 带 BOM,JSON.parse 不认
+			const settings = JSON.parse(raw.replace(/^﻿/, "")) as { profiles?: { list?: Array<{ guid?: string; name?: string }> } };
+			const list = settings.profiles?.list ?? [];
+			const hit = list.find((item) => (item.guid ?? "").toLowerCase() === guid);
+			if (hit?.name) return hit.name;
+		} catch {
+			continue;
+		}
+	}
+	return "";
 }
 
 let cached: ConsoleGeometry | null | undefined;
