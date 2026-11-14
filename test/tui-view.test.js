@@ -71,7 +71,7 @@ test("renderScreen:包含标题栏、统计、筛选、会话行与提示", () =
 	assert.match(text[1], /1 运行中 1/);
 	assert.match(text.join("\n"), /运行中的/);
 	assert.match(text.join("\n"), /历史的/);
-	assert.match(text[text.length - 1], /a 接管终端/);
+	assert.match(text[text.length - 1], /a 新窗口继续/);
 	assert.equal(lines.length, 20);
 });
 
@@ -93,8 +93,8 @@ test("renderScreen:空列表给出引导文案", () => {
 test("renderScreen:底部统一为「键位 | 消息」,消息在后", () => {
 	const withMessage = { ...state(), message: "已删除「演示会话」:已放入系统回收站" };
 	const text = stripAnsi(renderScreen(withMessage).join("\n"));
-	const footer = text.split("\n").filter((line) => line.includes("接管终端")).pop() ?? "";
-	assert.match(footer, /接管终端.*d 删除.*r 刷新.*1-4 筛选/, "键位顺序:删除 -> 刷新 -> 筛选");
+	const footer = text.split("\n").filter((line) => line.includes("就地接管")).pop() ?? "";
+	assert.match(footer, /就地接管.*d 删除.*r 刷新.*1-4 筛选/, "键位顺序:删除 -> 刷新 -> 筛选");
 	const confirmState = { ...state(), confirm: "删除「演示会话」?会放入系统回收站(可在资源管理器还原)" };
 	const confirmFooter = stripAnsi(renderScreen(confirmState).join("\n")).split("\n").filter((line) => line.includes("确认")).pop() ?? "";
 	assert.match(confirmFooter, /^\s*y 确认 \/ n 取消 \| 删除「演示会话」/, "确认态同样键位在前");

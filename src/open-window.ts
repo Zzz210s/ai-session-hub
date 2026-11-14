@@ -38,7 +38,10 @@ export interface WtArgsInput {
 
 /** 拼 wt 的参数(纯函数,便于单测)。全局选项必须在子命令 `nt` 之前,否则 wt 会当成标签参数。 */
 export function buildWtArgs(input: WtArgsInput): string[] {
-	const args = ["-w", input.mode === "window" ? "new" : "0"];
+	// 用 -1 而不是 new:某些 Windows Terminal 版本把 `new` 当成**窗口名**,
+	// 第一次建一个叫 new 的窗口,之后的新标签全塞进它 —— 表现就是"永远开不出第二个窗口"。
+	// -1 是文档里的"总是新窗口"保留值。
+	const args = ["-w", input.mode === "window" ? "-1" : "0"];
 	if (input.maximized === true) {
 		args.push("--maximized");
 	} else {
@@ -101,7 +104,11 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	const cwd = existsSync(rawCwd) ? rawCwd : process.cwd();
 	const title = sessionTitle(view);
 	const shell = resolveShell();
-	const args = shellArgs(shell, command, { keepAlive: true }).command;
+	// keepAlive 会给 bash 拼出 `; exec bash`、给 PowerShell 拼 `;` —— 而 Windows Terminal
+	// 把 `;` 当作自己的命令分隔符(实测 `\;` 也拦不住),结果:前半截当标签命令执行、
+	// 后半截被当成另一个命令 → 多出一个报错页,会话本身也没接着跑。
+	const args = shellArgs(shell, command, { keepAlive: false }).command;
+	const safeArgs = args.map((arg) => (arg.includes(";") ? arg.replaceAll(";", " &&") : arg));
 
 	if (!IS_WINDOWS) {
 		const opened = openInNewTerminal(`cd ${cwd.replace(/'/g, "'\\''")} && ${command}`, cwd);
@@ -112,7 +119,7 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	const profile = resolveProfile(config, geometry);
 	const size = resolveGeometry(config, geometry);
 	const mode: "window" | "tab" = config.mode === "tab" ? "tab" : "window";
-	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: args, profile, ...size });
+	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...size });
 	try {
 		const child = spawn("wt.exe", wtArgs, { detached: true, stdio: "ignore", windowsHide: false });
 		child.unref();

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyEnvOverrides, DEFAULT_OPEN, readOpenConfig } from "../src/open-config.ts";
 import { buildWtArgs, resolveGeometry, resolveProfile, sanitizePair } from "../src/open-window.ts";
+import { shellArgs } from "../src/shell.ts";
 
 const geometry = { cols: 120, rows: 30, x: 70, y: 77, width: 1199, height: 616, maximized: false, profile: "Cmder" };
 
@@ -22,9 +23,9 @@ const base = {
 	maximized: null,
 };
 
-test("新窗口:用 -w new,全局选项排在子命令 nt 之前", () => {
+test("新窗口:用 -w -1(不是 new),全局选项排在子命令 nt 之前", () => {
 	const args = buildWtArgs(base);
-	assert.deepEqual(args.slice(0, 7), ["-w", "new", "--size", "120,30", "--pos", "70,77", "nt"]);
+	assert.deepEqual(args.slice(0, 7), ["-w", "-1", "--size", "120,30", "--pos", "70,77", "nt"]);
 	assert.equal(args.indexOf("--size") < args.indexOf("nt"), true);
 	assert.equal(args.indexOf("nt") < args.indexOf("--profile"), true);
 });
@@ -119,4 +120,14 @@ test("几何值非法时丢弃(否则 wt 会去启动一个叫 100,25 的程序)
 test("探测到 0 列 0 行时不继承(交给 WT 默认)", () => {
 	const zero = { cols: 0, rows: 0, x: 0, y: 0, width: 0, height: 0, maximized: false, profile: "" };
 	assert.deepEqual(resolveGeometry(DEFAULT_OPEN, zero), { size: null, pos: null, maximized: false });
+});
+
+test("交给 wt 的命令里不能出现分号(WT 会把 `;` 当自己的命令分隔符,多开一个报错页)", () => {
+	const bash = shellArgs("C:/Program Files/Git/bin/bash.exe", 'pi --session "x.jsonl"', { keepAlive: false }).command;
+	const ps = shellArgs("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "pi --session x", { keepAlive: false }).command;
+	for (const args of [bash, ps]) {
+		for (const arg of args) assert.equal(arg.includes(";"), false, `不该有分号: ${arg}`);
+	}
+	const wt = buildWtArgs({ ...base, shellArgs: bash });
+	for (const arg of wt) assert.equal(arg.includes(";"), false, `wt 参数不该有分号: ${arg}`);
 });
