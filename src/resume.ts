@@ -8,6 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
+import { shellFlavor, type ShellFlavor } from "./shell.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -51,15 +52,29 @@ export function resolveCliCommand(tool: SessionView["tool"]): string {
 }
 
 /** 各 CLI 的恢复命令(基于会话存储位置或会话 id) */
-export function resumeCommand(view: SessionView): string {
+/**
+ * 按目标 shell 的语法给参数加引号。
+ *
+ * 为什么不用双引号:命令串会被 Windows Terminal 再序列化一遍交给子进程。实测把
+ * `node dump.mjs --session "C:\Users\..."` 经 `wt ... bash -lc` 跑,双引号里所有
+ * 反斜杠都被吃掉 —— `C:\Users\23652\.pi\...` 变成 `C:Users23652.pi...`,于是 pi
+ * 打开的是一个"盘符相对路径",报 EPERM/ENOENT。单引号版本原样送达。
+ */
+export function quoteForShell(value: string, flavor: ShellFlavor = "bash"): string {
+	if (flavor === "cmd") return `"${value}"`;
+	if (flavor === "powershell") return `'${value.replaceAll("'", "''")}'`;
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export function resumeCommand(view: SessionView, flavor: ShellFlavor = "bash"): string {
 	switch (view.tool) {
 		case "pi":
 			// 缺会话文件时不能拼出 --session "undefined":那样会在新窗口里报错,还看不出原因
-			return view.file ? `${resolveCliCommand("pi")} --session "${view.file}"` : "";
+			return view.file ? `${quoteForShell(resolveCliCommand("pi"), flavor)} --session ${quoteForShell(view.file, flavor)}` : "";
 		case "claude":
-			return `${resolveCliCommand("claude")} --resume ${view.id}`;
+			return `${quoteForShell(resolveCliCommand("claude"), flavor)} --resume ${view.id}`;
 		case "opencode":
-			return `${resolveCliCommand("opencode")} --session ${view.id}`;
+			return `${quoteForShell(resolveCliCommand("opencode"), flavor)} --session ${view.id}`;
 		default:
 			return "";
 	}

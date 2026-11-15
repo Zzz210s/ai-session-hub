@@ -19,7 +19,7 @@ import type { SessionView } from "./model.ts";
 import type { OpenConfig } from "./open-config.ts";
 import { loadOpenConfig } from "./open-config.ts";
 import { resumeCommand } from "./resume.ts";
-import { resolveShell, shellArgs } from "./shell.ts";
+import { resolveShell, shellArgs, shellFlavor } from "./shell.ts";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -100,12 +100,13 @@ export interface OpenOptions {
 /** 按配置打开会话(window/tab)。attach 模式不在这里处理,交给 runAttach。 */
 export async function openSession(view: SessionView, options: OpenOptions = {}): Promise<ActionResult> {
 	const config = options.config ?? loadOpenConfig();
-	const command = resumeCommand(view);
+	const shell = resolveShell();
+	// 引号要跟目标 shell 的语法一致:bash 用单引号,PowerShell 用单引号(cmd 只能用双引号)
+	const command = resumeCommand(view, shellFlavor(shell));
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool} 的恢复命令` };
 	const rawCwd = view.cwd && view.cwd.length > 0 ? view.cwd : process.cwd();
 	const cwd = existsSync(rawCwd) ? rawCwd : process.cwd();
 	const title = sessionTitle(view);
-	const shell = resolveShell();
 	// keepAlive 会给 bash 拼出 `; exec bash`、给 PowerShell 拼 `;` —— 而 Windows Terminal
 	// 把 `;` 当作自己的命令分隔符(实测 `\;` 也拦不住),结果:前半截当标签命令执行、
 	// 后半截被当成另一个命令 → 多出一个报错页,会话本身也没接着跑。
