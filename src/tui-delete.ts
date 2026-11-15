@@ -14,7 +14,12 @@ export interface DeleteFlowDeps {
 	selected(): SessionView | undefined;
 	notify(message: string): void;
 	redraw(): void;
-	reload(): Promise<void>;
+	/**
+	 * 重新读列表。
+	 * staleSessions: false = 绕过板面缓存、真扫一遍 —— 删完必须这么读,
+	 * 否则缓存里那条还在,界面上"删掉的会话"依旧显示,看起来就像没删成功。
+	 */
+	reload(options?: { staleSessions?: boolean }): Promise<void>;
 }
 
 export interface DeleteFlow {
@@ -65,9 +70,13 @@ export function createDeleteFlow(deps: DeleteFlowDeps): DeleteFlow {
 				deps.redraw();
 				return;
 			}
+			// 先给反馈:送系统回收站要起一次 PowerShell(慢的那台机器上 5 秒起),
+			// 这几秒里界面如果什么都不显示,用户会以为"按 y 没反应"
+			deps.notify(`正在删除「${fullTitle(view)}」…`);
+			deps.redraw();
 			void deleteSession(view).then(async (result) => {
 				deps.notify(result.detail);
-				await deps.reload();
+				await deps.reload({ staleSessions: false });
 				deps.redraw();
 			});
 		},

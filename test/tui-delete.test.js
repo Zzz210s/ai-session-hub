@@ -103,3 +103,26 @@ test("deleteFlow:会话已从列表消失时取消删除(不误删)", async () =
 	await waitFor(() => messages.some((m) => /已不在列表/.test(m)));
 	assert.match(messages.at(-1), /已不在列表/);
 });
+
+test("deleteFlow:确认后先给「正在删除」反馈,删完强制重扫(绕开板面缓存)", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "ais-del-"));
+	const file = join(dir, "sess.jsonl");
+	await writeFile(file, "{}\n");
+	const messages = [];
+	const reloads = [];
+	const flow = createDeleteFlow({
+		rows: () => [view({ file })],
+		selected: () => view({ file }),
+		notify: (m) => messages.push(m),
+		redraw: () => {},
+		reload: async (options) => {
+			reloads.push(options);
+		},
+	});
+	flow.request();
+	assert.ok(await waitFor(() => flow.pending()), "应进入确认态");
+	flow.answer(true);
+	assert.match(messages[0], /正在删除「演示会话」/, "确认后立刻给反馈,不能静默等几秒");
+	assert.ok(await waitFor(() => reloads.length > 0), "删除完成后应重读列表");
+	assert.deepEqual(reloads[0], { staleSessions: false }, "必须真扫,否则缓存里那条还在");
+});

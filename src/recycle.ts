@@ -20,6 +20,8 @@ const SCRIPT = join(here, "..", "scripts", "recycle.ps1");
 export interface RecycleResult {
 	ok: boolean;
 	detail?: string;
+	/** 解释器不存在(内部用:退回 Windows PowerShell) */
+	missingShell?: boolean;
 }
 
 /** 是否具备"系统回收站"能力 */
@@ -91,23 +93,44 @@ export function pathExists(path: string): boolean {
 	}
 }
 
+/**
+ * 选一个 PowerShell 来解释 recycle.ps1。
+ *
+ * 实测这台机器上从 Node 起进程的耗时:Windows PowerShell 5.1 光启动就要 5~7 秒
+ * (杀软每次扫 powershell.exe),PowerShell 7(pwsh)只要 0.6 秒 —— 而删除会话时
+ * 这几秒里界面什么都不显示,用户会以为"按了 y 没反应"。所以优先 pwsh。
+ */
+export function resolveRecycleShell(env: NodeJS.ProcessEnv = process.env): string {
+	const override = (env.AIS_PWSH ?? "").trim();
+	if (override) return override;
+	const candidates = [
+		join(env.ProgramFiles ?? "C:\Program Files", "PowerShell", "7", "pwsh.exe"),
+		join(env.ProgramFiles ?? "C:\Program Files", "PowerShell", "7-preview", "pwsh.exe"),
+	];
+	for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+	return "pwsh.exe";
+}
+
 export function recycleToSystem(path: string): Promise<RecycleResult> {
 	if (process.platform === "linux") return Promise.resolve(recycleToTrashLinux(path));
 	if (process.platform !== "win32") return Promise.resolve({ ok: false, detail: "当前平台没有系统回收站" });
 	if (!existsSync(SCRIPT)) return Promise.resolve({ ok: false, detail: "缺少 scripts/recycle.ps1" });
-	return new Promise((resolve) => {
-		execFile(
-			"powershell.exe",
-			["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, "-Path", path],
-			{ windowsHide: true, timeout: 30_000 },
-			(error, stdout, stderr) => {
-				const out = (stdout ?? "").trim();
-				if (out === "RECYCLED") {
-					resolve({ ok: true });
-					return;
-				}
-				resolve({ ok: false, detail: out || stderr?.trim() || error?.message || "回收站调用失败" });
-			},
-		);
-	});
+	const attempt = (shell: string): Promise<RecycleResult> =>
+		new Promise((resolve) => {
+			execFile(
+				shell,
+				["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT, "-Path", path],
+				{ windowsHide: true, timeout: 20_000 },
+				(error, stdout, stderr) => {
+					const out = (stdout ?? "").trim();
+					if (out === "RECYCLED") return resolve({ ok: true });
+					resolve({ ok: false, detail: out || stderr?.trim() || error?.message || "回收站调用失败", missingShell: error?.code === "ENOENT" });
+				},
+			);
+		});
+	const shell = resolveRecycleShell();
+	return attempt(shell).then((result) =>
+		// pwsh 没装(ENOENT)时退回 Windows PowerShell 5.1 —— 慢,但能用
+		result.missingShell && shell !== "powershell.exe" ? attempt("powershell.exe") : result,
+	);
 }
