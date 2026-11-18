@@ -154,3 +154,16 @@ test("resolveProfile:配置优先,其次环境变量,最后才是探测结果", 
 	assert.equal(resolveProfile(DEFAULT_OPEN, null, "Cmder"), "Cmder");
 	assert.equal(resolveProfile(DEFAULT_OPEN, geometry, ""), "Cmder");
 });
+
+test("buildWtArgs:标签模式带本页索引时,开完把焦点切回来", () => {
+	const args = buildWtArgs({ ...base, mode: "tab", focusTabIndex: 2 });
+	const tail = args.slice(-4);
+	assert.deepEqual(tail, [";", "focus-tab", "-t", "2"], "应追加 focus-tab");
+	assert.equal(args[0], "-w");
+	assert.equal(args[1], "0", "还是往当前窗口加标签");
+});
+
+test("buildWtArgs:新窗口模式/没索引时不追加 focus-tab", () => {
+	assert.ok(!buildWtArgs({ ...base, mode: "window", focusTabIndex: 2 }).includes("focus-tab"), "新窗口不该切焦点");
+	assert.ok(!buildWtArgs({ ...base, mode: "tab", focusTabIndex: null }).includes("focus-tab"));
+});

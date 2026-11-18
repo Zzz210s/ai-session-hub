@@ -43,12 +43,15 @@ Configured in `~/.ai-session-hub/config.json` (missing or malformed file falls b
     "geometry": "inherit",   // "inherit" copies size/position | "none" lets WT decide
     "size": null,            // override, e.g. "120,30"
     "pos": null,             // override, e.g. "100,80"
-    "maximized": null        // null follows the current window; true / false forces
+    "maximized": null,       // null follows the current window; true / false forces
+    "keepFocus": true        // tab mode: put the focus back on the ais tab after opening
   }
 }
 ```
 
 Environment overrides: `AIS_OPEN_MODE`, `AIS_OPEN_PROFILE`, `AIS_OPEN_GEOMETRY`, `AIS_OPEN_SIZE`, `AIS_OPEN_POS`, `AIS_OPEN_MAXIMIZED`.
+
+`keepFocus` (tab mode only): `wt new-tab` always activates the new tab, and Windows Terminal has no `--no-focus` yet ([microsoft/terminal#17460](https://github.com/microsoft/terminal/issues/17460)). ais therefore appends `; focus-tab -t <index>` to the same `wt` call, so the new session runs in the background tab and you stay on the board. Set `"keepFocus": false` to land in the new tab instead.
 
 WT's own `windowingBehavior` setting only affects calls **without** `-w`; ais always passes `-w new` or `-w 0` explicitly, so that setting cannot override the mode.
 

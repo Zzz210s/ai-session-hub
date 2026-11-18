@@ -43,7 +43,8 @@
     "geometry": "inherit",   // inherit 复制当前窗口尺寸位置 | none 交给 WT
     "size": null,            // 覆盖项 "120,30"
     "pos": null,             // 覆盖项 "100,80"
-    "maximized": null        // null 跟当前窗口 | true / false 强制
+    "maximized": null,       // null 跟当前窗口 | true / false 强制
+    "keepFocus": true        // 标签模式:开完把焦点切回 ais 这一页
   }
 }
 ```

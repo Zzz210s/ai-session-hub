@@ -19,6 +19,7 @@ import type { SessionView } from "./model.ts";
 import type { OpenConfig } from "./open-config.ts";
 import { loadOpenConfig } from "./open-config.ts";
 import { resumeCommand } from "./resume.ts";
+import { currentTab, currentTabCached } from "./live/current-tab.ts";
 import { resolveShell, shellArgs, shellFlavor } from "./shell.ts";
 
 const IS_WINDOWS = process.platform === "win32";
@@ -34,6 +35,12 @@ export interface WtArgsInput {
 	size: string | null;
 	pos: string | null;
 	maximized: boolean | null;
+	/**
+	 * 开完标签后把焦点切回这一页(本页在窗口里的索引)。
+	 * `wt new-tab` 一定会激活新标签,而 WT 还没有 `--no-focus`(microsoft/terminal#17460),
+	 * 所以用同一次调用里的 `; focus-tab -t N` 兜回来。
+	 */
+	focusTabIndex?: number | null;
 }
 
 /** 拼 wt 的参数(纯函数,便于单测)。全局选项必须在子命令 `nt` 之前,否则 wt 会当成标签参数。 */
@@ -51,6 +58,10 @@ export function buildWtArgs(input: WtArgsInput): string[] {
 	args.push("nt");
 	if (input.profile) args.push("--profile", input.profile);
 	args.push("--title", input.title, "-d", input.cwd, input.shell, ...input.shellArgs);
+	// 新标签插在本页之后,本页索引不变 —— 所以开完直接切回同一个索引
+	if (input.mode === "tab" && typeof input.focusTabIndex === "number" && input.focusTabIndex >= 0) {
+		args.push(";", "focus-tab", "-t", String(input.focusTabIndex));
+	}
 	return args;
 }
 
@@ -64,6 +75,12 @@ export interface GeometryArgs {
 	size: string | null;
 	pos: string | null;
 	maximized: boolean | null;
+	/**
+	 * 开完标签后把焦点切回这一页(本页在窗口里的索引)。
+	 * `wt new-tab` 一定会激活新标签,而 WT 还没有 `--no-focus`(microsoft/terminal#17460),
+	 * 所以用同一次调用里的 `; focus-tab -t N` 兜回来。
+	 */
+	focusTabIndex?: number | null;
 }
 
 /** `"120,30"` 这类值先过一遍格式校验:wt 拿到非法值会去启动一个同名程序,报 0x80070002 */
@@ -95,6 +112,8 @@ export interface OpenOptions {
 	geometry?: ConsoleGeometry | null;
 	/** 当前 WT profile 名(测试注入;默认从 WT_PROFILE_ID 读) */
 	envProfile?: string;
+	/** 本页在窗口里的索引(测试注入;默认探一次并缓存);null = 不切回焦点 */
+	currentTabIndex?: number | null;
 }
 
 /** 按配置打开会话(window/tab)。attach 模式不在这里处理,交给 runAttach。 */
@@ -125,7 +144,16 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	const size = resolveGeometry(config, geometry);
 	// 尺寸/位置/最大化只对新窗口有意义;往已有窗口加标签时传了会被忽略(个别版本还会报错)
 	const geometryArgs = mode === "window" ? size : { size: null, pos: null, maximized: null };
-	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...geometryArgs });
+	// 标签模式下开完要把焦点切回 ais 自己这一页,否则用户看到的是新会话页
+	const keepFocus = mode === "tab" && config.keepFocus !== false;
+	// 必须在**开之前**拿到本页索引:WT 的新标签插在哪儿取决于它的 newTabPosition 设置
+	// (这台机器是"追加到末尾"),开完再算 k-1 会算错。本页索引不会因为开新标签而变。
+	let focusTabIndex: number | null = null;
+	if (keepFocus) {
+		if (options.currentTabIndex !== undefined) focusTabIndex = options.currentTabIndex;
+		else focusTabIndex = currentTabCached()?.index ?? (await currentTab({ refresh: true }))?.index ?? null;
+	}
+	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...geometryArgs, focusTabIndex });
 	try {
 		const child = spawn("wt.exe", wtArgs, { detached: true, stdio: "ignore", windowsHide: false });
 		child.unref();

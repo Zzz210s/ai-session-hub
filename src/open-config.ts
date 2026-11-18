@@ -25,6 +25,8 @@ export interface OpenConfig {
 	pos: string | null;
 	/** true=最大化 / false=不最大化 / null=跟当前窗口 */
 	maximized: boolean | null;
+	/** 开完新标签后把焦点切回 ais 自己这一页(默认开) */
+	keepFocus: boolean;
 }
 
 export const DEFAULT_OPEN: OpenConfig = {
@@ -36,6 +38,7 @@ export const DEFAULT_OPEN: OpenConfig = {
 	size: null,
 	pos: null,
 	maximized: null,
+	keepFocus: true,
 };
 
 export function configPath(home: string = homedir()): string {

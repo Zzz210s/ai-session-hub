@@ -15,6 +15,7 @@ import { supportsColor } from "./theme.ts";
 import { loadExtensions, type ExtensionContext, type HubExtension } from "./extensions.ts";
 import { createExtensionContext } from "./tui-extension-ctx.ts";
 import { buildTuiState, renderScreen, stripAnsi, type FilterKind, type TuiState } from "./tui-view.ts";
+import { warmCurrentTab } from "./live/current-tab.ts";
 import { fullTitle } from "./format.ts";
 
 const REFRESH_MS = 3000;
@@ -87,6 +88,9 @@ export async function runTui(options: TuiOptions): Promise<void> {
 			draw(true);
 		},
 	});
+
+	// 预热"本页是哪个标签"(要跑一次 PowerShell+UIA,约 2 秒):开完会话要靠它把焦点切回来
+	warmCurrentTab();
 
 	const reload = async (options?: { staleLive?: boolean; staleSessions?: boolean; neverBlockLive?: boolean; neverBlockSessions?: boolean; liveTtlMs?: number }): Promise<void> => {
 		try {
