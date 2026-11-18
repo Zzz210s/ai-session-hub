@@ -8,7 +8,7 @@
  */
 
 import type { LiveApp, SessionRecord, SessionView, Tool } from "./model.ts";
-import { boardCachePath, readBoardCache, shouldRescan, writeBoardCache, BOARD_CACHE_STALE_MS, BOARD_MAX_AGE_MS } from "./views-cache.ts";
+import { boardCachePath, readBoardCache, shouldRescan, writeBoardCache, BOARD_CACHE_STALE_MS, BOARD_MAX_AGE_MS, type BoardCacheValue } from "./views-cache.ts";
 import { scanAllSessions, type ScanRoots } from "./scan/index.ts";
 import { sessionSignature } from "./scan/signature.ts";
 import { scanInBackground } from "./scan/background.ts";
@@ -55,6 +55,28 @@ const EMPTY_LIVE: LiveSnapshot = { processes: [], tabs: [], consoleWindows: [] }
 
 let refreshing: Promise<void> | null = null;
 
+/**
+ * "同步真扫"写过几次缓存。
+ *
+ * 要防的场景是删除后的幽灵行:后台扫描在删除**之前**开始,删除后我们同步重扫并写了新缓存,
+ * 可那个慢扫描随后才结束,把**含已删会话**的旧列表又写回去 —— 界面上被删的那条又冒出来
+ * (文件其实已经进回收站),要等下一次真重扫(最长 20 秒)才消失。
+ *
+ * 规则:同步扫描的结果永远最新,它写入时把序号 +1;后台扫描在写之前对一下自己启动时记的
+ * 序号,不一致就作废。
+ */
+let inlineWriteSeq = 0;
+
+async function writeInlineCache(path: string, value: BoardCacheValue): Promise<void> {
+	inlineWriteSeq += 1;
+	await writeBoardCache(path, value);
+}
+
+function writeWorkerCache(path: string, value: BoardCacheValue, seqAtStart: number): void {
+	if (seqAtStart !== inlineWriteSeq) return;
+	void writeBoardCache(path, value);
+}
+
 function signatureOf(options: LoadOptions): string {
 	return (options.signature ?? sessionSignature)();
 }
@@ -96,9 +118,11 @@ async function viewsWithLive(options: LoadOptions, sessions: SessionRecord[]): P
  */
 function refreshSessions(options: LoadOptions, path: string): void {
 	if (refreshing) return;
+	const seqAtStart = inlineWriteSeq;
 	const write = (sessions: SessionRecord[] | undefined): void => {
 		if (!sessions) return;
-		void writeBoardCache(path, { signature: signatureOf(options), at: Date.now(), sessions });
+		// 扫描期间有人(比如删除后的强制重扫)写过更新的一版 → 这次结果作废
+		writeWorkerCache(path, { signature: signatureOf(options), at: Date.now(), sessions }, seqAtStart);
 	};
 	refreshing = (options.scan ? scanOf(options) : scanInBackground({ tools: options.tools, roots: options.roots }))
 		.then(write)
@@ -126,6 +150,7 @@ export async function loadViews(options: LoadOptions = {}): Promise<LoadResult> 
 	}
 	const sessions = await scanOf(options);
 	const result = await viewsWithLive(options, sessions);
-	if (!options.noCache) await writeBoardCache(path, { signature: signatureOf(options), at: Date.now(), sessions });
+	// 这条路是"同步真扫"(删除后刷新走这里):结果最新,写入时让在途的慢扫描作废
+	if (!options.noCache) await writeInlineCache(path, { signature: signatureOf(options), at: Date.now(), sessions });
 	return result;
 }

@@ -74,11 +74,18 @@ export function createDeleteFlow(deps: DeleteFlowDeps): DeleteFlow {
 			// 这几秒里界面如果什么都不显示,用户会以为"按 y 没反应"
 			deps.notify(`正在删除「${fullTitle(view)}」…`);
 			deps.redraw();
-			void deleteSession(view).then(async (result) => {
-				deps.notify(result.detail);
-				await deps.reload({ staleSessions: false });
-				deps.redraw();
-			});
+			void deleteSession(view)
+				.then(async (result) => {
+					deps.notify(result.detail);
+					// 必须真扫:板面缓存里那条还在,读缓存会让"已删除的会话"继续显示
+					await deps.reload({ staleSessions: false });
+					deps.redraw();
+				})
+				// 删除链路任何一步抛异常都不能变成 unhandled rejection(那会直接终止 TUI)
+				.catch((error: unknown) => {
+					deps.notify(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+					deps.redraw();
+				});
 		},
 	};
 }

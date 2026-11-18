@@ -145,3 +145,26 @@ test("首次运行(没有板面缓存)+ neverBlockSessions:立刻给空板并触
 	assert.ok(await waitFor(() => calls.scans === 1), "要触发一次后台重扫");
 	assert.ok(await waitFor(() => readFileSync(path, "utf8").includes("fresh")), "扫完要把缓存写回");
 });
+
+test("删除后的同步重扫不会被在途的后台慢扫描写回旧列表(幽灵行)", async () => {
+	const path = join(mkdtempSync(join(tmpdir(), "ais-board-")), "views.json");
+	// 后台扫描:慢 80ms,扫到的是"删除前"的列表(含要删的会话)
+	let releaseScan;
+	const gate = new Promise((r) => (releaseScan = r));
+	const { options } = harness({
+		scanResult: async () => {
+			await gate;
+			return [record("待删"), record("保留")];
+		},
+	});
+	// 首次读:触发后台重扫(不阻塞)
+	await loadViews({ ...options, viewsCachePath: path, neverBlockSessions: true });
+	// 删除后的同步真扫:只看到"保留"
+	const fresh = harness({ scanResult: () => [record("保留")] });
+	await loadViews({ ...fresh.options, viewsCachePath: path, staleSessions: false });
+	assert.deepEqual(cachedSessions(path), ["保留"], "同步重扫应先落盘");
+	// 让慢扫描结束 —— 它的结果已经过期,不许覆盖
+	releaseScan();
+	assert.ok(await waitFor(() => false, 200) === false, "给后台扫描留出写盘时间");
+	assert.deepEqual(cachedSessions(path), ["保留"], "被删的会话不许被旧结果写回来");
+});
