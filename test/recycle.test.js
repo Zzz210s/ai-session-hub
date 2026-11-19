@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { encodeTrashPath, pickTrashName, recycleToTrashLinux, trashRoot } from "../src/recycle.ts";
+import { encodeTrashPath, parseRecycleReport, pickTrashName, recycleToTrashLinux, trashRoot } from "../src/recycle.ts";
 
 test("pickTrashName:重名时按规范追加 .1 .2", () => {
 	assert.equal(pickTrashName("a.jsonl", () => false), "a.jsonl");
@@ -61,4 +61,30 @@ test("recycleToTrashLinux:源文件不存在时报告失败(调用方会退回�
 	const result = recycleToTrashLinux(join(root, "nope.jsonl"), join(root, "Trash"));
 	assert.equal(result.ok, false);
 	assert.ok(result.detail && result.detail.length > 0);
+});
+
+/* ---------- 批量回收(2026-11-19 优化删除速度) ----------
+ * 现场:删一条 DSH 会话要移走 2 个路径(会话目录 + 元数据),原来逐个起 PowerShell,
+ * 每次约 750ms —— 删一条要 1.5 秒。批量后一次进程解决。
+ * 测试用正斜杠路径:Windows 一样认,还免得在 JS 字符串里堆反斜杠。
+ */
+
+test("parseRecycleReport:多路径报告按路径归位(路径含空格也对得上)", () => {
+	const paths = ["C:/a b/会话 1.jsonl", "C:/c/2.jsonl"];
+	const stdout = ["RECYCLED\t" + paths[0], "FAIL\t" + paths[1] + "\t文件被占用"].join("\n");
+	const result = parseRecycleReport(stdout, paths);
+	assert.equal(result.get(paths[0]).ok, true);
+	assert.equal(result.get(paths[1]).ok, false);
+	assert.match(String(result.get(paths[1]).detail), /占用/);
+});
+
+test("parseRecycleReport:兼容老的单路径输出(RECYCLED / FAIL <原因>)", () => {
+	assert.equal(parseRecycleReport("RECYCLED", ["C:/x.jsonl"]).get("C:/x.jsonl").ok, true);
+	assert.match(String(parseRecycleReport("FAIL 路径不存在", ["C:/x.jsonl"]).get("C:/x.jsonl").detail), /路径不存在/);
+});
+
+test("parseRecycleReport:没报告的路径算失败(不能当成功)", () => {
+	const result = parseRecycleReport("", ["C:/x.jsonl"]);
+	assert.equal(result.get("C:/x.jsonl").ok, false);
+	assert.match(String(result.get("C:/x.jsonl").detail), /没有回话/);
 });

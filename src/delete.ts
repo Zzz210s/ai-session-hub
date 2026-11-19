@@ -16,7 +16,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import type { SessionView } from "./model.ts";
 import { liveDir } from "./live/heartbeat.ts";
-import { canRecycleToSystem, recycleToSystem, type RecycleResult } from "./recycle.ts";
+import { canRecycleToSystem, recycleManyToSystem, recycleToSystem, type RecycleResult } from "./recycle.ts";
 import { title } from "./format.ts";
 
 export interface DeletePlan {
@@ -45,6 +45,8 @@ export interface DeleteOptions {
 	liveDirectory?: string;
 	/** 送入系统回收站的方式(默认 Windows 回收站;单测注入假实现) */
 	recycle?: (path: string) => Promise<RecycleResult>;
+	/** 批量送入系统回收站(默认:一次进程处理全部路径;单测注入假实现) */
+	recycleMany?: (paths: string[]) => Promise<Map<string, RecycleResult>>;
 	/** 是否允许使用系统回收站(默认按平台判断) */
 	allowSystemRecycle?: boolean;
 }
@@ -132,8 +134,16 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 	// 逐个处理:优先送系统回收站(Windows:资源管理器;Linux:freedesktop 回收站)
 	const useSystem = options.allowSystemRecycle ?? canRecycleToSystem();
 	const recycle = options.recycle ?? recycleToSystem;
+	// 批量:一次 PowerShell 启动处理所有路径(删一条 DSH 会话要移走两条路径,逐个起进程就是两倍耗时)
+	const recycleMany =
+		options.recycleMany ??
+		(options.recycle
+			? async (list: string[]) => new Map(await Promise.all(list.map(async (item) => [item, await recycle(item)] as const)))
+			: recycleManyToSystem);
 	const dir = options.trashDir ?? trashDir();
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+	// 回收站自己抛错不该把删除判死:下面会逐条退回内部回收目录
+	const reports = useSystem ? await recycleMany(paths).catch(() => new Map<string, RecycleResult>()) : new Map<string, RecycleResult>();
 	let recycled = 0;
 	let moved = 0;
 	const failed: { name: string; reason: string }[] = [];
@@ -141,7 +151,7 @@ export async function deleteSession(view: SessionView, options: DeleteOptions = 
 	for (const source of paths) {
 		const name = basename(source);
 		if (useSystem) {
-			const result = await recycle(source);
+			const result = reports.get(source) ?? { ok: false, detail: "回收站没有回话" };
 			if (result.ok) {
 				recycled++;
 				continue;

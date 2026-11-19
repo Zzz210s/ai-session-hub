@@ -77,7 +77,6 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 			return;
 		}
 		if (ch === "a") return void ctx.act("attach");
-		if (ch === "A") return void ctx.act("attach-inplace");
 		if (ch === "f") return void ctx.act("focus");
 		if (ch === "c") return void ctx.act("copy");
 		if (ch === "d") return ctx.requestDelete();
@@ -100,6 +99,11 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 
 	// 功能键
 	switch (key) {
+		case "ctrl-a":
+			// 就地接管:2026-11-19 从字母 A 改为 Ctrl+A(大写键容易误触,也不适合当"接管终端")。
+			// 搜索态不接管:那里 Ctrl+A 通常是"行首",直接把终端交出去会让人莫名其妙
+			if (ctx.isSearching()) return;
+			return void ctx.act("attach-inplace");
 		case "quit":
 			return ctx.quit("ctrl-c");
 		case "escape":

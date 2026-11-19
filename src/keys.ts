@@ -13,6 +13,8 @@ export type KeyName =
 	| "enter"
 	| "escape"
 	| "backspace"
+	/** Ctrl+A:就地接管(把终端交给会话,退出后回到看板) */
+	| "ctrl-a"
 	| "quit"
 	| { char: string };
 
@@ -107,6 +109,13 @@ export function parseKeys(buffer: string, options: { flush?: boolean } = {}): Pa
 		}
 		if (ch === "\u0003") {
 			keys.push("quit");
+			index += 1;
+			continue;
+		}
+		// Ctrl+A(0x01)= 就地接管;以前是字母 A,但大写键容易与输入习惯冲突,
+		// 也会让"在搜索框里敲大写 A"变成接管终端
+		if (ch === "\u0001") {
+			keys.push("ctrl-a");
 			index += 1;
 			continue;
 		}

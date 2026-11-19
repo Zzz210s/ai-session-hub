@@ -57,6 +57,31 @@ export async function writeBoardCache(path: string, value: BoardCacheValue): Pro
 	await writeCache({ path, ttlMs: BOARD_CACHE_STALE_MS }, value);
 }
 
+/**
+ * 从板面缓存里抹掉指定会话(删除成功后调用)。
+ *
+ * 不做这一步的话:用户删完会话马上退出 ais,磁盘上的板面快照里那条还在 ——
+ * 下次启动(6 小时内)首帧又会把它摆出来,用户以为"没删掉"。
+ * 只删条目、不动 `signature`/`at`:指纹照旧,该重扫的时候仍会重扫。
+ */
+export async function pruneBoardCache(
+	keys: { id: string; tool: SessionRecord["tool"] }[],
+	path = boardCachePath(),
+): Promise<number> {
+	if (keys.length === 0) return 0;
+	const cached = await readBoardCache(path);
+	if (!cached) return 0;
+	const before = cached.sessions.length;
+	const kept = cached.sessions.filter(
+		(session) => !keys.some((key) => session.id === key.id && session.tool === key.tool),
+	);
+	const removed = before - kept.length;
+	if (removed === 0) return 0;
+	// 保留原签名与写入时间:不改判定,只去掉已经不存在的条目
+	await writeBoardCache(path, { ...cached, sessions: kept });
+	return removed;
+}
+
 /** 现在该不该重扫:结构指纹变了、或超过最长陈旧时间(纯判定,便于单测) */
 export function shouldRescan(cached: Pick<BoardCacheValue, "signature" | "at">, signature: string, now = Date.now()): boolean {
 	if (signature !== cached.signature) return true;

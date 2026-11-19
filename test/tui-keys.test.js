@@ -158,3 +158,20 @@ test("dispatchKey:d 键请求删除", async () => {
 	await dispatchKey({ char: "d" }, ctx);
 	assert.equal(requested, 1);
 });
+
+test("dispatchKey:Ctrl+A 就地接管,字母 A 不再接管(2026-11-19 改键)", async () => {
+	const ctx = fakeContext();
+	await dispatchKey("ctrl-a", ctx);
+	assert.deepEqual(ctx.calls, ["act:attach-inplace"], "Ctrl+A 应当就地接管");
+
+	const plain = fakeContext();
+	await dispatchKey({ char: "A" }, plain);
+	assert.deepEqual(plain.calls, [], "大写 A 现在是普通字符,不该触发接管");
+});
+
+test("dispatchKey:搜索态按 Ctrl+A 不接管终端(那里是行首语义)", async () => {
+	const ctx = fakeContext();
+	ctx.searching = true;
+	await dispatchKey("ctrl-a", ctx);
+	assert.deepEqual(ctx.calls, [], "搜索态里接管终端会让人莫名其妙");
+});

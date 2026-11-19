@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { CACHE_FORMAT_VERSION, clearCache, readCache, writeCache } from "../src/cache.ts";
 import { cachedScan, readScanCache } from "../src/scan/cache.ts";
+import { pruneBoardCache, readBoardCache, writeBoardCache } from "../src/views-cache.ts";
 
 function tempDir() {
 	return mkdtempSync(join(tmpdir(), "ais-cache-"));
@@ -85,4 +86,20 @@ test("cachedScan:文件没变时不该重算(这条能抓出“stat 没导入 �
 	assert.equal(computes, 3);
 	assert.ok(!existsSync(missing));
 	assert.ok(statSync(file).size > 0);
+});
+
+test("pruneBoardCache:删除会话后把磁盘快照里的那条抹掉(不然下次首帧又摆出来)", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "ais-board-"));
+	const path = join(dir, "views.json");
+	const record = (id, tool, file) => ({ id, tool, file, name: id, cwd: "C:/w", state: "stored", updatedAt: new Date(), createdAt: new Date() });
+	await writeBoardCache(path, {
+		signature: "sig-1",
+		at: Date.now(),
+		sessions: [record("keep", "pi", "C:/a.jsonl"), record("gone", "pi", "C:/b.jsonl"), record("same-id", "claude", "C:/c.jsonl"), record("same-id", "pi", "C:/d.jsonl")],
+	});
+	const removed = await pruneBoardCache([{ id: "gone", tool: "pi" }, { id: "same-id", tool: "pi" }], path);
+	assert.equal(removed, 2, "应当只抹掉 pi 的那两条");
+	const after = await readBoardCache(path);
+	assert.deepEqual(after.sessions.map((s) => s.id + ":" + s.tool).sort(), ["keep:pi", "same-id:claude"], "同 id 不同工具的那条必须留着");
+	assert.equal(after.signature, "sig-1", "签名不动:该重扫时仍会重扫");
 });

@@ -70,7 +70,7 @@ This tool fills that gap: it discovers sessions you already started, annotates t
 | Status annotation | parses the glyph written by pi-tab-status into `*` thinking / `>` running a tool / `\|` waiting / `?` possibly stalled / `x` error / `.` idle; sessions needing you are flagged `!` and can be filtered with `2` |
 | Focus window | selects the matching Windows Terminal tab via UI Automation and brings the window forward |
 | Split panes (**provided by an extension**) | several sessions running side by side in the same page: each pane is a real PTY whose output is emulated and composed into this program (engine: the [tui-panes](https://github.com/Zzz210s/tui-panes) extension) |
-| Open session | opens a **new tab in the current window** (`wt -w 0`) — ais runs in that window, so it is the most recently used one. Set `open.mode: "window"` for a separate window (which then inherits the current profile, size and position). `Shift+A` still hands the current terminal over (attach) |
+| Open session | opens a **new tab in the current window** (`wt -w 0`) — ais runs in that window, so it is the most recently used one. Set `open.mode: "window"` for a separate window (which then inherits the current profile, size and position). `Ctrl+A` still hands the current terminal over (attach). After the new tab opens, focus is put **back on the ais tab** — the tab index is probed fresh right before opening, because a cached index lands on the neighbouring tab once tabs have been added or closed |
 | Copy resume command | one key to put the exact command on your clipboard |
 | Live refresh | 3-second poll; redraws only when the composed screen actually changes |
 | Extensions | the core can be extended (split panes come from the [tui-panes](https://github.com/Zzz210s/tui-panes) extension); the core references no concrete extension and works fine without any |
@@ -151,7 +151,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `↑` `↓` / `j` `k` / `ctrl+p` `ctrl+n` | move the cursor (the selected row is highlighted full-width); `PageUp`/`PageDown` page, `Home`/`End` jump |
 | `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
 | `a` | open the session in a **new tab of the current window** (configurable) |
-| `Shift+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
+| `Ctrl+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
 | `x` / `Ctrl+W` | close a pane; `Ctrl+Q` returns focus from a pane to the list |
@@ -175,6 +175,13 @@ Press `d` on a session and confirm with `y`. Three safety rules apply:
 1. **Running sessions cannot be deleted** — the file is being written to; focus the window (`f`) and exit the session first.
 2. **Nothing is hard-deleted**: the session file is moved to `~/.ai-session-hub/trash/` (`<timestamp>__<tool>__<name>.jsonl`), so it can be restored by moving it back.
 3. **Stale heartbeat entries are cleaned up** at the same time, so a deleted session does not linger as "running".
+
+The row disappears **the moment you press `y`** — it does not wait for PowerShell or for a rescan:
+
+- success → the row is dropped from the list *and* from the on-disk board snapshot, a background refresh follows, and the status line reports `已删除「x」:N 项已放入系统回收站`
+- failure → the row comes **back** with the reason (never "says deleted but still there")
+- multiple paths (DSH: session directory + metadata) go through **one** PowerShell process (it used to be one per path, ~750 ms each)
+- the rescan is no longer part of the delete path: the sessions directory mtime changed, so the next 3-second tick rescans in the background
 
 From the CLI:
 
@@ -280,7 +287,7 @@ An extension is a plain module (usually a package/repo) exporting `createHubExte
 
 Available extensions: [tui-panes](https://github.com/Zzz210s/tui-panes) (same-page split panes).
 
-**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to open it in a new tab, `Shift+A` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
+**Extension-free installs stay extension-free**: with no extension loaded, no extension wording appears anywhere in the UI — the footer lists only the core keys, and pressing `Enter` on a historical session just says the session is not running (use `a` to open it in a new tab, `Ctrl+A` to attach). Extension hints (e.g. `Enter 分屏打开`) show up only once an extension is actually loaded.
 
 ## Architecture
 

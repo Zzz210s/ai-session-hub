@@ -9,7 +9,8 @@ import { resumeCommand } from "./actions.ts";
 import { createInputPump } from "./tui-input.ts";
 import { createContext } from "./tui-context.ts";
 import { createTuiScreen } from "./tui-screen.ts";
-import { createDeleteFlow } from "./tui-delete.ts";
+import { createDeleteFlow, dropRow } from "./tui-delete.ts";
+import { createTombstones } from "./tui-tombstones.ts";
 import { createTuiActions } from "./tui-actions.ts";
 import { supportsColor } from "./theme.ts";
 import { loadExtensions, type ExtensionContext, type HubExtension } from "./extensions.ts";
@@ -19,8 +20,7 @@ import { warmCurrentTab } from "./live/current-tab.ts";
 import { fullTitle } from "./format.ts";
 
 const REFRESH_MS = 3000;
-/** 界面的加载参数:探测与扫描都比刷新间隔慢,所以两者都允许"先渲染旧的、后台刷新" */
-const TUI_LIVE_TTL_MS = 15000;
+const TUI_LIVE_TTL_MS = 15000; // 探测/扫描都比刷新间隔慢:允许"先渲染旧的、后台刷新" 
 const TUI_LOAD = { staleLive: true, staleSessions: true, neverBlockLive: true, neverBlockSessions: true, liveTtlMs: TUI_LIVE_TTL_MS } as const;
 const REDRAW_THROTTLE_MS = 80;
 
@@ -41,6 +41,8 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	const optionsLoader = options.load;
 	const ui = { filter: options.filter ?? "all", query: "", searchMode: false, cursor: 0 };
 	let allRows: SessionView[] = [];
+	/** 正在删/已删掉的会话:防止异步重扫把"已删除"的那行又摆回来(见 tui-tombstones.ts) */
+	const tombstones = createTombstones();
 	let message = "";
 	let drawTimer: ReturnType<typeof setTimeout> | null = null;
 	let done: (why: string) => void = () => {};
@@ -51,7 +53,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 
 	const computeState = (): TuiState =>
 		buildTuiState({
-			allRows,
+			allRows: tombstones.filter(allRows),
 			filter: ui.filter,
 			query: ui.query,
 			searchMode: ui.searchMode,
@@ -89,12 +91,12 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		},
 	});
 
-	// 预热"本页是哪个标签"(要跑一次 PowerShell+UIA,约 2 秒):开完会话要靠它把焦点切回来
-	warmCurrentTab();
+	warmCurrentTab(); // 预热本页标签索引(开完会话要靠它把焦点切回来)
 
 	const reload = async (options?: { staleLive?: boolean; staleSessions?: boolean; neverBlockLive?: boolean; neverBlockSessions?: boolean; liveTtlMs?: number }): Promise<void> => {
 		try {
 			allRows = await optionsLoader(options);
+			tombstones.prune(allRows);
 		} catch (error) {
 			message = `刷新失败: ${error instanceof Error ? error.message : String(error)}`;
 		}
@@ -129,6 +131,12 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		selected: actions.selected,
 		notify: (text) => (message = text),
 		redraw: () => draw(true),
+		hide: (key) => tombstones.add(key),
+		unhide: (key) => tombstones.remove(key),
+		forget: (key) => {
+			tombstones.remove(key);
+			allRows = dropRow(allRows, key);
+		},
 		reload,
 	});
 

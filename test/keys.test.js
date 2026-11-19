@@ -71,3 +71,8 @@ test("parseKeys(flush):超时收尾时,孤立的 ESC 就是一次 Esc 按下", (
 	assert.deepEqual(broken.keys, []);
 	assert.equal(broken.rest, "");
 });
+
+test("parseKeys:Ctrl+A(0x01)解析为 ctrl-a,不再占用字母 A", () => {
+	assert.deepEqual(parseKeys("\u0001").keys, ["ctrl-a"], "Ctrl+A 是就地接管");
+	assert.deepEqual(parseKeys("A").keys, [{ char: "A" }], "大写 A 要当普通字符(以前是就地接管,2026-11-19 改键)");
+});

@@ -150,8 +150,15 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	// (这台机器是"追加到末尾"),开完再算 k-1 会算错。本页索引不会因为开新标签而变。
 	let focusTabIndex: number | null = null;
 	if (keepFocus) {
-		if (options.currentTabIndex !== undefined) focusTabIndex = options.currentTabIndex;
-		else focusTabIndex = currentTabCached()?.index ?? (await currentTab({ refresh: true }))?.index ?? null;
+		if (options.currentTabIndex !== undefined) {
+			focusTabIndex = options.currentTabIndex;
+		} else {
+			// 必须**现探**:缓存是看板启动时的那一次,用户此后开关过标签页就会错位,
+			// 而错位的后果就是 `focus-tab -t N` 把焦点切到**隔壁**标签 —— 用户看到的是
+			// "打开后自己跳到下一个标签页"(2026-11-19 的报障)。探不到才退回缓存。
+			const probe = await currentTab({ refresh: true }).catch(() => null);
+			focusTabIndex = probe?.index ?? currentTabCached()?.index ?? null;
+		}
 	}
 	const wtArgs = buildWtArgs({ mode, title, cwd, shell, shellArgs: safeArgs, profile, ...geometryArgs, focusTabIndex });
 	try {
