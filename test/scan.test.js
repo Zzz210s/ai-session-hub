@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parseClaudeSession } from "../src/scan/claude.ts";
-import { parsePiSession } from "../src/scan/pi.ts";
+import { parsePiSession, scanPiSessions } from "../src/scan/pi.ts";
 import { looksLikePayload, toSnippet } from "../src/scan/io.ts";
 
 async function fixture(lines) {
@@ -63,4 +63,28 @@ test("io:载荷识别与摘要压缩", () => {
 	assert.equal(looksLikePayload(""), true);
 	assert.equal(toSnippet("a\n\nb   c"), "a b c");
 	assert.match(toSnippet("x".repeat(100), 10), /…$/);
+});
+
+test("scanPiSessions:跳过 subagent-artifacts 里的 transcript(不是会话,却会挤进板面)", async () => {
+	// 现场:本机 12 个 `sessions/<项目>/subagent-artifacts/*_vision_0_transcript.jsonl` 被当成会话列出,
+	// 它们共用同一个 id(`vision_0_transcript`),既没有名字也无法区分,还会让「按 id 删除」删错文件
+	const root = await mkdtemp(join(tmpdir(), "ais-piroot-"));
+	const project = join(root, "--C--proj--");
+	const artifacts = join(project, "subagent-artifacts");
+	await mkdtemp(join(tmpdir(), "ais-unused-")); // 保持与其它用例一致的临时目录习惯
+	const { mkdir } = await import("node:fs/promises");
+	await mkdir(artifacts, { recursive: true });
+
+	const head = (id, cwd) => JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-20T10:00:00.000Z", cwd });
+	const info = (name) => JSON.stringify({ type: "session_info", id: "s1", parentId: null, timestamp: "2026-11-20T10:00:01.000Z", name });
+
+	await writeFile(join(project, "2026-11-20T10-00-00-000Z_aaaa.jsonl"), `${head("aaaa", "C:\\proj")}\n${info("真正的会话")}\n`, "utf8");
+	await writeFile(join(artifacts, "bbbb_vision_0_transcript.jsonl"), `${head("vision_0_transcript", "C:\\proj")}\n`, "utf8");
+
+	const rows = await scanPiSessions(root);
+	assert.deepEqual(
+		rows.map((row) => row.id),
+		["aaaa"],
+		"只应扫到真正的会话",
+	);
 });

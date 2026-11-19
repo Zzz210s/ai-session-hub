@@ -146,3 +146,78 @@ test("correlate:GUI 工具标记 kind=gui 且带 appRunning", () => {
 	assert.equal(pi.kind, "cli");
 	assert.equal(pi.appRunning, false);
 });
+
+/* ---------- 心跳可信度(2026-11 修「无法删除会话」) ----------
+ * 现场:板面把 01a1f3c7 标成 running,但那个 pid 现在是一个无关的 node 进程(PID 复用);
+ * 另有两个心跳的 pid 早已退出。它们全都被 planDelete 拦下(「会话正在运行」),于是删不掉。
+ * pi 的会话每分钟刷新一次心跳,所以「心跳过期」本身就说明会话不在跑了。
+ */
+
+const HEARTBEAT_STALE = "2026-11-18T11:38:22.571Z"; // 一天前
+const fresh = () => new Date().toISOString();
+
+test("correlate:过期心跳不再算运行中(会话早就关了,只剩记录)", () => {
+	const views = correlate({
+		sessions: [session()],
+		processes: [],
+		tabs: [],
+		heartbeats: [{ tool: "pi", pid: 4242, sessionId: "sess-1", status: "idle", updatedAt: HEARTBEAT_STALE }],
+	});
+	assert.equal(views[0].state, "stored", "过期心跳不该让会话一直显示运行中(那会挡住删除)");
+	assert.equal(views[0].live, undefined);
+});
+
+test("correlate:心跳的 pid 被别的程序复用时不算运行中", () => {
+	const views = correlate({
+		sessions: [session()],
+		processes: [{ pid: 4242, tool: "claude", startedAt: new Date(), args: "claude.exe" }],
+		tabs: [],
+		heartbeats: [{ tool: "pi", pid: 4242, sessionId: "sess-1", status: "idle", updatedAt: fresh() }],
+	});
+	assert.equal(views[0].state, "stored", "pid 复用给别的工具 -> 不是这个会话");
+});
+
+test("correlate:同 pid 是 pi,但命令行指向另一个会话时不算运行中", () => {
+	const views = correlate({
+		sessions: [session({ file: "C:/sessions/1.jsonl", id: "sess-1" })],
+		processes: [
+			{
+				pid: 4242,
+				tool: "pi",
+				startedAt: new Date(),
+				args: 'node C:/x/pi/dist/bundle/cli.js --session "C:/sessions/OTHER.jsonl"',
+			},
+		],
+		tabs: [],
+		heartbeats: [{ tool: "pi", pid: 4242, sessionId: "sess-1", sessionFile: "C:/sessions/1.jsonl", status: "idle", updatedAt: fresh() }],
+	});
+	assert.equal(views[0].state, "stored", "同一个 pid 但会话文件不同 -> pid 被另一个 pi 会话复用");
+});
+
+test("correlate:命令行指向同一会话文件时算运行中", () => {
+	const views = correlate({
+		sessions: [session({ file: "C:/sessions/1.jsonl", id: "sess-1" })],
+		processes: [
+			{
+				pid: 4242,
+				tool: "pi",
+				startedAt: new Date(),
+				args: 'node C:/x/pi/dist/bundle/cli.js --session "C:/sessions/1.jsonl"',
+			},
+		],
+		tabs: [],
+		heartbeats: [{ tool: "pi", pid: 4242, sessionId: "sess-1", sessionFile: "C:/sessions/1.jsonl", status: "idle", updatedAt: fresh() }],
+	});
+	assert.equal(views[0].state, "running");
+	assert.equal(views[0].live?.pid, 4242);
+});
+
+test("correlate:命令行里没有会话信息时保守信任心跳(不能因为探测信息不全就判死)", () => {
+	const views = correlate({
+		sessions: [session()],
+		processes: [{ pid: 4242, tool: "pi", startedAt: new Date(), args: "node C:/x/pi/dist/bundle/cli.js --continue" }],
+		tabs: [],
+		heartbeats: [{ tool: "pi", pid: 4242, sessionId: "sess-1", status: "idle", updatedAt: fresh() }],
+	});
+	assert.equal(views[0].state, "running", "信息不足时按运行中处理:误删正在写入的会话比多拦一次严重得多");
+});

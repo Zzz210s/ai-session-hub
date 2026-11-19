@@ -82,7 +82,9 @@ function signatureOf(options: LoadOptions): string {
 }
 
 function scanOf(options: LoadOptions, tools?: Tool[]): Promise<SessionRecord[]> {
-	return (options.scan ?? scanAllSessions)({ tools: tools ?? options.tools });
+	// roots 必须转发:漏掉它时,带 roots 的调用(测试、临时根)会静默去扫真实会话存储 ——
+	// 2026-11 排查删除问题时实测到(探针脚本本意只扫临时目录,却列出了全部真实会话)
+	return (options.scan ?? scanAllSessions)({ tools: tools ?? options.tools, roots: options.roots });
 }
 
 /** 现读实况(心跳 + 探测快照),与给它的会话列表拼成视图 */

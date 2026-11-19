@@ -151,7 +151,7 @@ export async function probeLiveUncached(): Promise<LiveSnapshot> {
 			pid: item.pid,
 			tool: kind.tool,
 			startedAt: Number.isNaN(started.getTime()) ? new Date() : started,
-			args: (item.cmd ?? "").slice(0, 200),
+			args: (item.cmd ?? "").slice(0, 400),
 			internal: kind.internal,
 		});
 	}

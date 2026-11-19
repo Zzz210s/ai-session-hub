@@ -55,7 +55,7 @@ export function classifyPsRows(rows: PsRow[], now = Date.now()): LiveProcess[] {
 			pid: row.pid,
 			tool: kind.tool,
 			startedAt: new Date(now - row.elapsedSeconds * 1000),
-			args: row.args.slice(0, 200),
+			args: row.args.slice(0, 400),
 			internal: kind.internal,
 		});
 	}

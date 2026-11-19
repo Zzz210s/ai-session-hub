@@ -9,6 +9,7 @@
 
 import type { ConsoleWindow, Heartbeat, LiveApp, LiveProcess, SessionRecord, SessionView, TerminalTab } from "../model.ts";
 import { kindOf } from "../model.ts";
+import { heartbeatTrusted } from "./heartbeat-trust.ts";
 
 export interface CorrelateInput {
 	sessions: SessionRecord[];
@@ -95,8 +96,12 @@ function statusFromDetail(detail: string | undefined): { status?: string; attent
 
 export function correlate(input: CorrelateInput): SessionView[] {
 	const tolerance = input.timeToleranceMs ?? 90_000;
+	// 先剔掉不可信的心跳(过期记录 / pid 复用 / 同 pid 换了会话),否则会话会被永久标成
+	// running,而 planDelete 正是靠 state 拦删除 —— 表现就是"删不掉"
+	const now = Date.now();
+	const trustedHeartbeats = input.heartbeats.filter((hb) => heartbeatTrusted(hb, input.processes, now).trusted);
 	const heartbeatsById = new Map<string, Heartbeat>();
-	for (const hb of input.heartbeats) {
+	for (const hb of trustedHeartbeats) {
 		if (hb.sessionId) heartbeatsById.set(hb.sessionId, hb);
 	}
 
@@ -110,7 +115,7 @@ export function correlate(input: CorrelateInput): SessionView[] {
 		// 1) 心跳精确匹配(按 id,或按会话文件路径)
 		const hb =
 			heartbeatsById.get(session.id) ??
-			input.heartbeats.find((entry) => entry.sessionFile && entry.sessionFile === session.file);
+			trustedHeartbeats.find((entry) => entry.sessionFile && entry.sessionFile === session.file);
 		if (hb) {
 			view.live = { pid: hb.pid, heartbeat: hb };
 			view.state = "running";

@@ -126,3 +126,33 @@ test("deleteFlow:确认后先给「正在删除」反馈,删完强制重扫(绕�
 	assert.ok(await waitFor(() => reloads.length > 0), "删除完成后应重读列表");
 	assert.deepEqual(reloads[0], { staleSessions: false }, "必须真扫,否则缓存里那条还在");
 });
+
+test("deleteFlow:同 id 不同工具时不误删(按 id + tool 重新定位)", async () => {
+	// 现场:id 并不全局唯一 —— 本机有 12 条 subagent transcript 共用 id `vision_0_transcript`。
+	// 只按 id 找会把「选中的那条」换成列表里第一条同 id 的会话,于是删掉另一个文件。
+	const dir = await mkdtemp(join(tmpdir(), "ais-dup-"));
+	const piFile = join(dir, "pi-session.jsonl");
+	const claudeFile = join(dir, "claude-session.jsonl");
+	await writeFile(piFile, "{}\n");
+	await writeFile(claudeFile, "{}\n");
+	const messages = [];
+	const rows = [
+		view({ tool: "claude", id: "shared-id", file: claudeFile, name: "克劳德那条" }),
+		view({ tool: "pi", id: "shared-id", file: piFile, name: "派那条" }),
+	];
+	const flow = createDeleteFlow({
+		rows: () => rows,
+		selected: () => rows[1], // 用户选中的是第二条(pi)
+		notify: (m) => messages.push(m),
+		redraw: () => {},
+		reload: async () => {},
+	});
+	flow.request();
+	assert.ok(await waitFor(() => flow.pending() !== undefined), "应进入确认态");
+	assert.match(String(flow.pending()), /派那条/, "确认提示要写清是哪一条");
+	flow.answer(true);
+	await waitFor(() => messages.some((m) => /已删除|失败/.test(m)));
+	const { existsSync } = await import("node:fs");
+	assert.equal(existsSync(piFile), false, "选中的那条应被删除");
+	assert.equal(existsSync(claudeFile), true, "同 id 的另一条绝不能被删");
+});

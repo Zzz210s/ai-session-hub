@@ -32,17 +32,25 @@ export interface DeleteFlow {
 }
 
 export function createDeleteFlow(deps: DeleteFlowDeps): DeleteFlow {
-	/** 存会话 id 而不是对象:列表刷新后仍能定位,避免错删 */
-	let pendingId: string | null = null;
+	/**
+	 * 存 id + 工具(不是对象):列表刷新后仍能定位,又不会认错。
+	 * 只按 id 找会出事 —— id 并不全局唯一:本机有 12 条 subagent transcript 共用
+	 * id `vision_0_transcript`,只按 id 匹配会删掉列表里第一条同 id 的**另一个文件**(误删)。
+	 */
+	let pending: { id: string; tool: SessionView["tool"] } | null = null;
 
-	const prompt = (sessionId: string): string => {
-		const view = deps.rows().find((row) => row.id === sessionId);
-		const label = view ? fullTitle(view) : sessionId.slice(0, 8);
+	/** 按 id + 工具定位(同 id 不同工具是两条不同的会话) */
+	const locate = (key: { id: string; tool: SessionView["tool"] }): SessionView | undefined =>
+		deps.rows().find((row) => row.id === key.id && row.tool === key.tool);
+
+	const prompt = (key: { id: string; tool: SessionView["tool"] }): string => {
+		const view = locate(key);
+		const label = view ? fullTitle(view) : `${key.tool} ${key.id.slice(0, 8)}`;
 		return `删除「${label}」?会放入系统回收站(可在${process.platform === "win32" ? "资源管理器" : "文件管理器"}还原)`;
 	};
 
 	return {
-		pending: () => (pendingId ? prompt(pendingId) : undefined),
+		pending: () => (pending ? prompt(pending) : undefined),
 		request() {
 			const view = deps.selected();
 			if (!view) return;
@@ -52,19 +60,19 @@ export function createDeleteFlow(deps: DeleteFlowDeps): DeleteFlow {
 					deps.redraw();
 					return;
 				}
-				pendingId = view.id;
+				pending = { id: view.id, tool: view.tool };
 				deps.redraw();
 			});
 		},
 		answer(accepted) {
-			const sessionId = pendingId;
-			pendingId = null;
-			if (!accepted || !sessionId) {
+			const key = pending;
+			pending = null;
+			if (!accepted || !key) {
 				deps.notify("已取消删除");
 				deps.redraw();
 				return;
 			}
-			const view = deps.rows().find((row) => row.id === sessionId);
+			const view = locate(key);
 			if (!view) {
 				deps.notify("会话已不在列表中,删除取消");
 				deps.redraw();

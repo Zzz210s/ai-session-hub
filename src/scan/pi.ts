@@ -136,8 +136,11 @@ function extractUserText(content: unknown): string {
 	return "";
 }
 
+/** 子代理产物目录:里面是 transcript,不是会话(共用 id `vision_0_transcript`,还会让"按 id 删除"删错文件) */
+const ARTIFACT_DIR = /[\\/]subagent-artifacts[\\/]/;
+
 export async function scanPiSessions(root: string = piSessionsRoot()): Promise<SessionRecord[]> {
-	const files = await collectFiles(root, ".jsonl", 2);
+	const files = (await collectFiles(root, ".jsonl", 2)).filter((file) => !ARTIFACT_DIR.test(file));
 	const out: SessionRecord[] = [];
 	for (const file of files) {
 		try {
