@@ -17,20 +17,20 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import type { PkgRef } from "./extension-refs.ts";
+import type { RefSources } from "./extension-refs.ts";
+import { extensionRefs, defaultRefSources, readPkgVersion } from "./extension-refs.ts";
+import { fetchLatestVersions } from "./npm-registry.ts";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /** 预检结论:一致 / 有新版本 / 未知(未知一律当作要更新) */
-export type PrecheckVerdict = "up-to-date" | "outdated" | "unknown";
+// 既有导入方(测试、preflight-run)从这里取,保持可用
+export { fetchLatestVersions } from "./npm-registry.ts";
+export { extensionRefs, parsePackageEntry, readPkgVersion, defaultRefSources } from "./extension-refs.ts";
+export type { ExtensionRefOptions, PkgRef } from "./extension-refs.ts";
 
-export interface PkgRef {
-	/** npm 包名 */
-	name: string;
-	/** 本地已装版本(读不到则 undefined) */
-	installed?: string;
-	/** settings.json 里的固定版本(pin 存在时只比 pin,不去追 latest) */
-	pin?: string;
-}
+export type PrecheckVerdict = "up-to-date" | "outdated" | "unknown";
 
 export interface PrecheckResult {
 	pi: PrecheckVerdict;
@@ -38,51 +38,58 @@ export interface PrecheckResult {
 	claude: PrecheckVerdict;
 	/** 摘要文案,例如「已是最新: pi 本体 / pi 扩展」;没有跳过项时为 undefined */
 	note?: string;
+	/** 只提示、不参与判定的孤儿扩展(在受管清单里但不在 settings 里,pi 不会更新它们) */
+	orphans?: OutdatedRef[];
+	/** 这次查到的 registry latest(供更新后复核用) */
+	latest?: Map<string, string>;
+	/** 这次用的路径来源(更新后按同一批来源复核) */
+	sources?: RefSources;
 }
 
-const REGISTRY = "https://registry.npmjs.org";
+/** 一条「本地版本与目标不一致」的扩展 */
+export interface OutdatedRef {
+	name: string;
+	installed?: string;
+	target?: string;
+}
+
+/** 逐条比较(不区分孤儿);信息缺失的不算,避免误报 */
+function laggingRefs(refs: PkgRef[], latest: Map<string, string>): OutdatedRef[] {
+	const out: OutdatedRef[] = [];
+	for (const ref of refs) {
+		const target = ref.pin ?? latest.get(ref.name);
+		if (!ref.installed || !target) continue;
+		if (ref.installed !== target) out.push({ name: ref.name, installed: ref.installed, target });
+	}
+	return out;
+}
+
+/**
+ * 逐条列出与目标版本不一致、且**会被 pi 更新**的扩展(pin 优先当目标)。
+ * 孤儿(只在受管清单里)排除在外:pi update --extensions 不遍历它们,算进来就永远判 outdated。
+ */
+export function outdatedRefs(refs: PkgRef[], latest: Map<string, string>): OutdatedRef[] {
+	return laggingRefs(refs.filter((ref) => !ref.orphan), latest);
+}
+
+/**
+ * 更新**之后**按同一批来源重读一遍,列出仍然落后的扩展。
+ *
+ * 为什么要复核:`pi update --extensions` 有已知的"静默不生效"路径 —— npm 在包刚发布后
+ * 可能解析到过期的注册表元数据,装上旧版本**却不报错**(pi 自己会打印 "is still X" 提示,
+ * 退出码仍是 0)。不复核的话 ais 会把这种"不完全更新"记成成功并写 TTL,接下来 6 小时都不再试。
+ */
+export function stillOutdated(sources: RefSources, latest: Map<string, string>): OutdatedRef[] {
+	const refs = extensionRefs(sources.settingsPath, sources.modulesRoot, sources);
+	return outdatedRefs(refs, latest);
+}
+
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 const CLAUDE_PACKAGE = "@anthropic-ai/claude-code";
 
 /** AIS_UPDATE_PRECHECK=0 关闭预检(恢复"每次都跑") */
 export function precheckEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 	return env.AIS_UPDATE_PRECHECK !== "0";
-}
-
-/** 读 package.json 的 version;任何异常都返回 undefined(→ unknown → 照旧更新) */
-export function readPkgVersion(pkgJsonPath: string): string | undefined {
-	try {
-		const parsed = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as { version?: unknown };
-		return typeof parsed.version === "string" && parsed.version.trim() ? parsed.version.trim() : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-/** 从 `npm:pkg@1.2.3` 这类 settings 条目里取包名与 pin */
-export function parsePackageEntry(entry: string): { name: string; pin?: string } {
-	const raw = entry.startsWith("npm:") ? entry.slice(4) : entry;
-	const at = raw.lastIndexOf("@");
-	if (at > 0) return { name: raw.slice(0, at), pin: raw.slice(at + 1) };
-	return { name: raw };
-}
-
-/** 本地已装的 pi 扩展版本(直接读 node_modules 里的 package.json,毫秒级;`pi list` 要 5.5s) */
-export function extensionRefs(settingsPath: string, modulesRoot: string): PkgRef[] {
-	let packages: unknown;
-	try {
-		packages = (JSON.parse(readFileSync(settingsPath, "utf8")) as { packages?: unknown }).packages;
-	} catch {
-		return [];
-	}
-	if (!Array.isArray(packages)) return [];
-	return packages
-		.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-		.map((entry) => {
-			const { name, pin } = parsePackageEntry(entry);
-			const installed = readPkgVersion(join(modulesRoot, ...name.split("/"), "package.json"));
-			return { name, installed, pin };
-		});
 }
 
 /** claude 的本地版本:npm 全局布局下直接读文件(实测 `claude --version` 要 5.1s) */
@@ -99,69 +106,18 @@ export function claudeInstalledVersion(env: NodeJS.ProcessEnv = process.env): st
 	return undefined;
 }
 
-/** 单个包查一次(带超时);拿不到 latest 返回 undefined */
-async function fetchOne(doFetch: typeof fetch, registry: string, name: string, timeoutMs: number): Promise<string | undefined> {
-	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), timeoutMs);
-	try {
-		const response = await doFetch(`${registry}/${name.replace("/", "%2F")}`, {
-			headers: { Accept: "application/vnd.npm.install-v1+json" },
-			signal: controller.signal,
-		});
-		if (!response.ok) return undefined;
-		const body = (await response.json()) as { "dist-tags"?: { latest?: unknown } };
-		const latest = body["dist-tags"]?.latest;
-		return typeof latest === "string" && latest.trim() ? latest.trim() : undefined;
-	} catch {
-		return undefined; // 超时/网络/解析失败 -> 该包未知
-	} finally {
-		clearTimeout(timer);
-	}
-}
-
-/**
- * 一次并行查所有包的 latest;单个失败只影响该包(→ unknown)。registry 可注入以便离线测试。
- *
- * 失败会**再试一次**并放宽超时:registry 偶尔会抽风(2026-10-12 实测一次连续超时 ~10s,
- * 随后立刻恢复正常)。不重试的话,抽风期间每个包都是 unknown —— 表现为"预检没帮上忙,
- * 又跑一遍 37-180 秒的完整更新",那正是要避免的。
- */
-export async function fetchLatestVersions(
-	names: string[],
-	options: { fetchImpl?: typeof fetch; timeoutMs?: number; retryTimeoutMs?: number; registry?: string } = {},
-): Promise<Map<string, string>> {
-	const doFetch = options.fetchImpl ?? fetch;
-	const registry = options.registry ?? REGISTRY;
-	const timeoutMs = options.timeoutMs ?? 4_000;
-	const retryTimeoutMs = options.retryTimeoutMs ?? Math.max(timeoutMs * 2, 8_000);
-	const out = new Map<string, string>();
-	await Promise.all(
-		names.map(async (name) => {
-			const first = await fetchOne(doFetch, registry, name, timeoutMs);
-			if (first !== undefined) {
-				out.set(name, first);
-				return;
-			}
-			const second = await fetchOne(doFetch, registry, name, retryTimeoutMs);
-			if (second !== undefined) out.set(name, second);
-		}),
-	);
-	return out;
-}
-
 /**
  * 一组包的结论:全部一致 → up-to-date;有任一确定不一致 → outdated;其余 → unknown。
  * pin 存在时只与 pin 比(pi update --extensions 会尊重 pin,不该因为上游有新版就触发更新)。
  */
 export function verdictOf(refs: PkgRef[], latest: Map<string, string>): PrecheckVerdict {
-	if (refs.length === 0) return "unknown";
-	let sawOutdated = false;
-	for (const ref of refs) {
-		const target = ref.pin ?? latest.get(ref.name);
-		if (!ref.installed || !target) return "unknown";
-		if (ref.installed !== target) sawOutdated = true;
+	// 孤儿(只在受管清单里)不参与:pi update --extensions 不遍历它们,算进来会永远判 outdated
+	const relevant = refs.filter((ref) => !ref.orphan);
+	if (relevant.length === 0) return refs.length === 0 ? "unknown" : "up-to-date";
+	for (const ref of relevant) {
+		if (!ref.installed || !(ref.pin ?? latest.get(ref.name))) return "unknown";
 	}
-	return sawOutdated ? "outdated" : "up-to-date";
+	return outdatedRefs(relevant, latest).length > 0 ? "outdated" : "up-to-date";
 }
 
 export interface PrecheckInput {
@@ -169,6 +125,13 @@ export interface PrecheckInput {
 	piVersion: () => Promise<string | undefined>;
 	settingsPath?: string;
 	extensionsRoot?: string;
+	/** 受管扩展清单 `<agentDir>/npm/package.json`(默认按 agentDir 推) */
+	manifestPath?: string;
+	/** 工程作用域 settings 与已装位置(默认 `<cwd>/.pi/...`) */
+	projectSettingsPath?: string;
+	projectModulesRoot?: string;
+	/** 当前目录(默认 process.cwd(),用于推工程作用域路径) */
+	cwd?: string;
 	env?: NodeJS.ProcessEnv;
 	fetchImpl?: typeof fetch;
 	timeoutMs?: number;
@@ -180,11 +143,17 @@ export interface PrecheckInput {
  */
 export async function precheckUpdates(input: PrecheckInput): Promise<PrecheckResult> {
 	const env = input.env ?? process.env;
-	const settingsPath = input.settingsPath ?? join(homedir(), ".pi", "agent", "settings.json");
-	const extensionsRoot = input.extensionsRoot ?? join(homedir(), ".pi", "agent", "npm", "node_modules");
+	const fallback = defaultRefSources(undefined, input.cwd ?? process.cwd());
+	// 受管清单跟着 settings 走:注入临时 settings 时不会去读真实的 ~/.pi/agent/npm
+	const manifestPath = input.manifestPath ?? join(dirname(input.settingsPath ?? fallback.settingsPath), "npm", "package.json");
+	const settingsPath = input.settingsPath ?? fallback.settingsPath;
+	const extensionsRoot = input.extensionsRoot ?? fallback.modulesRoot;
 	const fetchOptions = { fetchImpl: input.fetchImpl, timeoutMs: input.timeoutMs, registry: input.registry };
 
-	const refs = extensionRefs(settingsPath, extensionsRoot);
+	// 三个来源一起看(用户 settings / 受管清单 / 工程 settings):漏一个就会误判"已是最新"并跳过更新
+	const projectSettingsPath = input.projectSettingsPath ?? fallback.projectSettingsPath;
+	const projectModulesRoot = input.projectModulesRoot ?? fallback.projectModulesRoot;
+	const refs = extensionRefs(settingsPath, extensionsRoot, { manifestPath, projectSettingsPath, projectModulesRoot });
 	const [piVersion, latest] = await Promise.all([
 		input.piVersion().catch(() => undefined),
 		fetchLatestVersions([PI_PACKAGE, CLAUDE_PACKAGE, ...refs.map((ref) => ref.name)], fetchOptions),
@@ -197,9 +166,23 @@ export async function precheckUpdates(input: PrecheckInput): Promise<PrecheckRes
 	const claude: PrecheckVerdict = claudeVersion && claudeLatest ? (claudeVersion === claudeLatest ? "up-to-date" : "outdated") : "unknown";
 	const extensions = verdictOf(refs, latest);
 
+	// 孤儿:在受管清单里但不在任何 settings 里 —— pi update --extensions 不会碰它们,只作提示
+	const orphans = laggingRefs(
+		refs.filter((ref) => ref.orphan),
+		latest,
+	);
+
 	const skipped: string[] = [];
 	if (pi === "up-to-date") skipped.push("pi 本体");
 	if (extensions === "up-to-date") skipped.push("pi 扩展");
 	if (claude === "up-to-date") skipped.push("Claude Code");
-	return { pi, extensions, claude, note: skipped.length ? `已是最新,跳过: ${skipped.join(" / ")}` : undefined };
+	return {
+		pi,
+		extensions,
+		claude,
+		note: skipped.length ? `已是最新,跳过: ${skipped.join(" / ")}` : undefined,
+		orphans,
+		latest,
+		sources: { settingsPath, modulesRoot: extensionsRoot, manifestPath, projectSettingsPath, projectModulesRoot },
+	};
 }

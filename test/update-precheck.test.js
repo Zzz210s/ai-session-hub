@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
 	claudeInstalledVersion,
+	defaultRefSources,
 	extensionRefs,
 	fetchLatestVersions,
 	parsePackageEntry,
@@ -221,4 +222,137 @@ test("fetchLatestVersions:两次都失败才认输(该包 unknown)", async () =>
 	const map = await fetchLatestVersions(["a"], { fetchImpl: dead, timeoutMs: 10, retryTimeoutMs: 10 });
 	assert.equal(map.size, 0);
 	assert.equal(calls, 2, "每个包最多试两次(不无限重试)");
+});
+
+/* ---------- 覆盖全部受管扩展(2026-11-19 修「插件不完全更新」) ----------
+ * 现场:pi 启动时提示 `@cortexkit/pi-magic-context`、`pi-subagents` 有更新;更关键的是
+ * `@signalridge/pi-tab-status` 已装 1.2.2、上游 1.3.2,却**永远不更新** ——
+ * 因为预检只看 settings.json 的 packages(9 个),而 pi 还会更新 ~/.pi/agent/npm/package.json
+ * 里声明的那一个(共 10 个)。预检说"已是最新"→ 跳过 pi update --extensions → 它一直落后。
+ */
+
+test("extensionRefs:把 npm/package.json 里声明、但 settings 没列的扩展也算进来", () => {
+	const dir = tempDir();
+	try {
+		const modules = join(dir, "node_modules");
+		writePkg(modules, "pi-a", "1.0.0");
+		writePkg(modules, "@s/only-in-manifest", "1.2.2");
+		const settings = join(dir, "settings.json");
+		writeFileSync(settings, JSON.stringify({ packages: ["npm:pi-a"] }), "utf8");
+		const manifest = join(dir, "package.json");
+		writeFileSync(
+			manifest,
+			JSON.stringify({ name: "pi-extensions", private: true, dependencies: { "pi-a": "^1.0.0", "@s/only-in-manifest": "^1.2.2" } }),
+			"utf8",
+		);
+		const refs = extensionRefs(settings, modules, { manifestPath: manifest });
+		assert.deepEqual(
+			refs.map((r) => r.name).sort(),
+			["@s/only-in-manifest", "pi-a"],
+			"pi 会更新 package.json 里声明的所有依赖,预检必须一起看",
+		);
+		assert.equal(refs.find((r) => r.name === "@s/only-in-manifest").installed, "1.2.2");
+		assert.equal(refs.find((r) => r.name === "@s/only-in-manifest").pin, undefined, "manifest 里的 ^1.2.2 是范围,不是 pin");
+	} finally {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	}
+});
+
+test("extensionRefs:把工程作用域(<cwd>/.pi/agent/settings.json)的扩展也算进来", () => {
+	const dir = tempDir();
+	try {
+		const modules = join(dir, "node_modules");
+		writePkg(modules, "pi-a", "1.0.0");
+		const settings = join(dir, "settings.json");
+		writeFileSync(settings, JSON.stringify({ packages: ["npm:pi-a"] }), "utf8");
+		const projectSettings = join(dir, "proj", ".pi", "agent", "settings.json");
+		mkdirSync(join(dir, "proj", ".pi", "agent"), { recursive: true });
+		writeFileSync(projectSettings, JSON.stringify({ packages: ["npm:pi-project-only"] }), "utf8");
+		writePkg(join(dir, "proj", ".pi", "npm", "node_modules"), "pi-project-only", "2.0.0");
+
+		const refs = extensionRefs(settings, modules, {
+			projectSettingsPath: projectSettings,
+			projectModulesRoot: join(dir, "proj", ".pi", "npm", "node_modules"),
+		});
+		assert.deepEqual(refs.map((r) => r.name).sort(), ["pi-a", "pi-project-only"]);
+		assert.equal(refs.find((r) => r.name === "pi-project-only").installed, "2.0.0", "工程作用域的版本要从 .pi/npm 里读");
+	} finally {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	}
+});
+
+test("precheckUpdates:只在受管清单里的孤儿落后时,不算落后,但要在提示里说出来", async () => {
+	const dir = tempDir();
+	try {
+		const modules = join(dir, "node_modules");
+		writePkg(modules, "pi-a", "1.0.0");
+		writePkg(modules, "@s/tab-status", "1.2.2");
+		const settings = join(dir, "settings.json");
+		writeFileSync(settings, JSON.stringify({ packages: ["npm:pi-a"] }), "utf8");
+		const manifest = join(dir, "package.json");
+		writeFileSync(manifest, JSON.stringify({ dependencies: { "pi-a": "^1.0.0", "@s/tab-status": "^1.2.2" } }), "utf8");
+
+		const result = await precheckUpdates({
+			piVersion: async () => "1.1.0",
+			settingsPath: settings,
+			extensionsRoot: modules,
+			manifestPath: manifest,
+			env: { APPDATA: join(dir, "none") },
+			fetchImpl: fakeFetch({ "@earendil-works/pi-coding-agent": "1.1.0", "pi-a": "1.0.0", "@s/tab-status": "1.3.2" }),
+		});
+		// pi update --extensions 只遍历 settings 的 packages(实测读源码 + 真机验证),孤儿它永远不更新。
+		// 所以不能算进"该不该跑更新"的判断,否则每次启动都白跑十几秒;但要单独提示出来。
+		assert.equal(result.extensions, "up-to-date", "孤儿不该让判定永远停在 outdated");
+		assert.equal(result.orphans?.length, 1, "孤儿要在提示里列出来,让用户知道它不会自动更新");
+		assert.equal(result.orphans[0].name, "@s/tab-status");
+	} finally {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	}
+});
+
+test("precheckUpdates:工程作用域的扩展落后时判 outdated(pi 会更新它,不能跳过)", async () => {
+	const dir = tempDir();
+	try {
+		const modules = join(dir, "node_modules");
+		writePkg(modules, "pi-a", "1.0.0");
+		const settings = join(dir, "settings.json");
+		writeFileSync(settings, JSON.stringify({ packages: ["npm:pi-a"] }), "utf8");
+		const projectSettings = join(dir, "proj", ".pi", "agent", "settings.json");
+		mkdirSync(join(dir, "proj", ".pi", "agent"), { recursive: true });
+		writeFileSync(projectSettings, JSON.stringify({ packages: ["npm:pi-proj"] }), "utf8");
+		writePkg(join(dir, "proj", ".pi", "npm", "node_modules"), "pi-proj", "1.0.0");
+
+		const result = await precheckUpdates({
+			piVersion: async () => "1.1.0",
+			settingsPath: settings,
+			extensionsRoot: modules,
+			manifestPath: join(dir, "npm", "package.json"),
+			projectSettingsPath: projectSettings,
+			projectModulesRoot: join(dir, "proj", ".pi", "npm", "node_modules"),
+			env: { APPDATA: join(dir, "none") },
+			fetchImpl: fakeFetch({ "@earendil-works/pi-coding-agent": "1.1.0", "pi-a": "1.0.0", "pi-proj": "1.2.0" }),
+		});
+		assert.equal(result.extensions, "outdated", "工程作用域的包 pi 也会更新,漏看就会跳过更新");
+	} finally {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	}
+});
+
+test("extensionRefs:在家目录里启动时,工程 settings 与全局是同一个文件(不能读错安装根)", () => {
+	const dir = tempDir();
+	try {
+		const agentDir = join(dir, ".pi", "agent");
+		const modules = join(agentDir, "npm", "node_modules");
+		writePkg(modules, "pi-a", "1.0.0");
+		mkdirSync(agentDir, { recursive: true });
+		writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:pi-a"] }), "utf8");
+
+		// cwd = 家目录 -> projectSettingsPath 与 settingsPath 是同一个文件
+		const sources = defaultRefSources(agentDir, dir);
+		assert.equal(sources.projectSettingsPath, sources.settingsPath, "构造前提:两者确实同一路径");
+		const refs = extensionRefs(sources.settingsPath, sources.modulesRoot, sources);
+		assert.equal(refs[0].installed, "1.0.0", "必须从 npm/node_modules 读,不能因为工程路径相同就去 ~/.pi/npm 找");
+	} finally {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	}
 });

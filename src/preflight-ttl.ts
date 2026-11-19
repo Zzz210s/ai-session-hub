@@ -33,6 +33,8 @@ export interface PreflightState {
 	version: number;
 	/** 上次全部步骤成功的时刻(epoch ms) */
 	lastSuccessAt?: number;
+	/** 连续几次"更新跑了但扩展版本没变"(复核失败);到上限就不再每轮重试 */
+	verifyFailures?: number;
 }
 
 /** 解析 AIS_UPDATE_TTL:纯毫秒数字,或带 s/m/h/d 后缀;0 表示每次都查;非法值回落默认 */
@@ -60,19 +62,28 @@ export function readPreflightState(file: string): PreflightState {
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<PreflightState>;
 		if (parsed?.version !== STATE_FORMAT_VERSION) return { version: STATE_FORMAT_VERSION };
+		const state: PreflightState = { version: STATE_FORMAT_VERSION };
 		const at = parsed.lastSuccessAt;
-		if (typeof at !== "number" || !Number.isFinite(at) || at <= 0) return { version: STATE_FORMAT_VERSION };
-		return { version: STATE_FORMAT_VERSION, lastSuccessAt: at };
+		if (typeof at === "number" && Number.isFinite(at) && at > 0) state.lastSuccessAt = at;
+		const fails = parsed.verifyFailures;
+		if (typeof fails === "number" && Number.isFinite(fails) && fails > 0) state.verifyFailures = fails;
+		return state;
 	} catch {
 		return { version: STATE_FORMAT_VERSION };
 	}
 }
 
-/** 写状态:只在全部成功时调用;写不进去也不影响启动(下次就当没记录,重跑一遍) */
-export function writePreflightState(file: string, at: number = Date.now()): void {
+/**
+ * 写状态。`lastSuccessAt` 只在"全部成功"时传;只记复核失败次数时传 undefined。
+ * 写不进去也不影响启动(下次就当没记录,重跑一遍)。
+ */
+export function writePreflightState(file: string, at?: number, verifyFailures?: number): void {
 	try {
 		mkdirSync(dirname(file), { recursive: true });
-		writeFileSync(file, JSON.stringify({ version: STATE_FORMAT_VERSION, lastSuccessAt: at }, null, 2) + "\n", "utf8");
+		const state: PreflightState = { version: STATE_FORMAT_VERSION };
+		if (at !== undefined) state.lastSuccessAt = at;
+		if (verifyFailures !== undefined) state.verifyFailures = verifyFailures;
+		writeFileSync(file, JSON.stringify(state, null, 2) + "\n", "utf8");
 	} catch {
 		/* 尽力而为 */
 	}
