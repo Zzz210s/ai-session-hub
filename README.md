@@ -166,6 +166,8 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `r` | refresh now |
 | `q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
 
+Letter shortcuts are **case-insensitive**: `A`=`a`, `C`=`c`, `D`=`d`, `F`=`f`, `J`=`j`, `K`=`k`, `Q`=`q`, `R`=`r`; confirmation accepts `y`/`Y` and `n`/`N`. Text typed into the search box keeps its case.
+
 GUI sessions (Zed / DeepSeek Harness) have some keys that differ — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
 
 ## Deleting a session

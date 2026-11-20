@@ -64,31 +64,35 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 	if (typeof key === "object") {
 		const ch = key.char;
 		if (ctx.isSearching()) {
+			// 搜索词**区分**大小写(用户可能就是要找 "AIS")
 			if (ch >= " ") {
 				ctx.appendQuery(ch);
 				ctx.redraw();
 			}
 			return;
 		}
-		if (ch === "q") return ctx.quit("q");
+		// 快捷键不区分大小写(2026-11-19 用户要求):`A` 等同 `a`,`Q` 等同 `q` ——
+		// 开了 CapsLock 或习惯按住 Shift 时不该变成"按键没反应"
+		const hot = ch.toLowerCase();
+		if (hot === "q") return ctx.quit("q");
 		if (ch === "/") {
 			ctx.setSearching(true);
 			ctx.redraw();
 			return;
 		}
-		if (ch === "a") return void ctx.act("attach");
-		if (ch === "f") return void ctx.act("focus");
-		if (ch === "c") return void ctx.act("copy");
-		if (ch === "d") return ctx.requestDelete();
-		if (ch === "j") {
+		if (hot === "a") return void ctx.act("attach");
+		if (hot === "f") return void ctx.act("focus");
+		if (hot === "c") return void ctx.act("copy");
+		if (hot === "d") return ctx.requestDelete();
+		if (hot === "j") {
 			ctx.move(1);
 			return;
 		}
-		if (ch === "k") {
+		if (hot === "k") {
 			ctx.move(-1);
 			return;
 		}
-		if (ch === "r") return void ctx.refresh();
+		if (hot === "r") return void ctx.refresh();
 		const digit = "1234".indexOf(ch);
 		if (digit >= 0) {
 			ctx.setFilter(FILTERS[digit]);

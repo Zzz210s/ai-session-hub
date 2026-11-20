@@ -159,14 +159,44 @@ test("dispatchKey:d 键请求删除", async () => {
 	assert.equal(requested, 1);
 });
 
-test("dispatchKey:Ctrl+A 就地接管,字母 A 不再接管(2026-11-19 改键)", async () => {
+test("dispatchKey:Ctrl+A 就地接管;大写 A 等同 a(开新标签),不再接管终端", async () => {
 	const ctx = fakeContext();
 	await dispatchKey("ctrl-a", ctx);
 	assert.deepEqual(ctx.calls, ["act:attach-inplace"], "Ctrl+A 应当就地接管");
 
 	const plain = fakeContext();
 	await dispatchKey({ char: "A" }, plain);
-	assert.deepEqual(plain.calls, [], "大写 A 现在是普通字符,不该触发接管");
+	assert.deepEqual(plain.calls, ["act:attach"], "快捷键不分大小写:A 就是 a(2026-11-19 改键)");
+});
+
+test("dispatchKey:快捷键不分大小写(A 等同 a、Q 等同 q、D 等同 d)", async () => {
+	const flow = fakeContext();
+	await dispatchKey({ char: "A" }, flow);
+	await dispatchKey({ char: "F" }, flow);
+	await dispatchKey({ char: "C" }, flow);
+	await dispatchKey({ char: "R" }, flow);
+	await dispatchKey({ char: "Q" }, flow);
+	assert.deepEqual(flow.calls, ["act:attach", "act:focus", "act:copy", "refresh", "quit:q"], "大写键应与小写行为一致");
+
+	const del = fakeContext();
+	let requested = 0;
+	del.pendingConfirm = () => undefined;
+	del.requestDelete = () => requested++;
+	await dispatchKey({ char: "D" }, del);
+	assert.equal(requested, 1, "大写 D 也要能请求删除");
+
+	const move = fakeContext();
+	await dispatchKey({ char: "J" }, move);
+	await dispatchKey({ char: "K" }, move);
+	assert.deepEqual(move.calls, ["move:1", "move:-1"], "J/K 也等同 j/k");
+});
+
+test("dispatchKey:搜索态里大写仍是搜索词(搜索区分大小写)", async () => {
+	const ctx = fakeContext();
+	ctx.searching = true;
+	for (const ch of "AIS") await dispatchKey({ char: ch }, ctx);
+	assert.equal(ctx.query, "AIS", "搜索词保留原样大小写");
+	assert.deepEqual(ctx.calls.filter((c) => c.startsWith("act:")), [], "搜索时敲大写字母不该触发快捷键");
 });
 
 test("dispatchKey:搜索态按 Ctrl+A 不接管终端(那里是行首语义)", async () => {
