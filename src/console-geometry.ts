@@ -12,6 +12,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolvePowerShellEngine } from "./powershell.ts";
 
 export interface ConsoleGeometry {
 	cols: number;
@@ -113,7 +114,7 @@ export async function probeConsoleGeometry(options: { force?: boolean } = {}): P
 	if (!options.force && cached !== undefined) return cached;
 	cached = await new Promise<ConsoleGeometry | null>((resolve) => {
 		if (!existsSync(SCRIPT)) return resolve(null);
-		const powershell = process.env.AIS_PWSH?.trim() || "powershell.exe";
+		const powershell = resolvePowerShellEngine();
 		execFile(
 			powershell,
 			["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SCRIPT],

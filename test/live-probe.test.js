@@ -78,13 +78,16 @@ test("probeLive:noCache 只探测不读也不写缓存", async () => {
 	assert.equal(JSON.parse(readFileSync(path, "utf8")).value.mark, "cached", "不应覆盖缓存");
 });
 
-test("resolvePowerShellEngine:默认用系统自带 powershell.exe,可用 AIS_PWSH 指定 pwsh", async () => {
+test("resolvePowerShellEngine:有 pwsh 就默认用它(11-21 实测 5-10 秒 vs 0.5 秒),AIS_PWSH 可覆盖", async () => {
 	const { resolvePowerShellEngine } = await import("../src/live/windows.ts");
-	// 本机实测:pwsh 7 比 powershell.exe 慢(1714ms vs 1363ms 平均),所以默认不切
-	assert.equal(resolvePowerShellEngine({}), "powershell.exe");
-	assert.equal(resolvePowerShellEngine({ AIS_PWSH: "0" }), "powershell.exe");
-	assert.equal(resolvePowerShellEngine({ AIS_PWSH: "auto" }), "powershell.exe");
-	assert.equal(resolvePowerShellEngine({ AIS_PWSH: "C:/tools/pwsh.exe" }), "C:/tools/pwsh.exe");
+	const noPwsh = () => false;
+	const hasScoop = (p) => p === "C:/U/scoop/shims/pwsh.exe";
+	const env = { ProgramFiles: "C:/PF", LOCALAPPDATA: "C:/LA", USERPROFILE: "C:/U", PATH: "" };
+	assert.equal(resolvePowerShellEngine(env, hasScoop), "C:/U/scoop/shims/pwsh.exe", "找到 pwsh 就用它");
+	assert.equal(resolvePowerShellEngine(env, noPwsh), "powershell.exe", "没有 pwsh 才退回 5.1");
+	assert.equal(resolvePowerShellEngine({ ...env, AIS_PWSH: "0" }, hasScoop), "powershell.exe", "AIS_PWSH=0 强制 5.1");
+	assert.equal(resolvePowerShellEngine({ ...env, AIS_PWSH: "C:/tools/pwsh.exe" }, noPwsh), "C:/tools/pwsh.exe", "AIS_PWSH 可指定任意引擎");
+	assert.equal(resolvePowerShellEngine({ ...env, AIS_PWSH: "auto" }, hasScoop), "C:/U/scoop/shims/pwsh.exe", "auto = 自动探测");
 });
 
 test("findPwsh:能从候选路径或 PATH 里找到 pwsh(仅用于提示)", async () => {

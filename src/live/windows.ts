@@ -9,6 +9,7 @@ import { cacheDir, readCache, ttlFromEnv, writeCache } from "../cache.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ConsoleWindow, LiveApp, LiveProcess, TerminalTab } from "../model.ts";
+import { resolvePowerShellEngine } from "../powershell.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(here, "..", "..", "scripts", "windows.ps1");
@@ -25,36 +26,9 @@ export interface LiveSnapshot {
 	stale?: boolean;
 }
 
-/**
- * 选 PowerShell 引擎:优先 PowerShell 7(pwsh)。
- *
- * 本机实测(5 轮交替采样,scripts/windows.ps1):
- *   powershell.exe  最小 1254ms / 平均 1363ms
- *   pwsh 7          最小 1431ms / 平均 1714ms   ← **更慢**
- * 所以默认仍是系统自带的 powershell.exe;想用 pwsh 自己指定(AIS_PWSH=<路径>)。
- * 三份脚本(windows.ps1 / focus.ps1 / recycle.ps1)在 pwsh 下都已验证能跑,所以随时可切。
- */
-export function resolvePowerShellEngine(env: NodeJS.ProcessEnv = process.env, fileExists: (p: string) => boolean = existsSync): string {
-	const override = (env.AIS_PWSH ?? "").trim();
-	if (!override || /^(auto|default|0|false|1|true)$/i.test(override)) return "powershell.exe";
-	return override;
-}
+// 引擎解析在 powershell.ts(唯一写者);这里再导出,原有导入路径不变
+export { findPwsh, resolvePowerShellEngine } from "../powershell.ts";
 
-/** 探测 pwsh 的位置(仅用于提示/诊断;默认不启用) */
-export function findPwsh(env: NodeJS.ProcessEnv = process.env, fileExists: (p: string) => boolean = existsSync): string | undefined {
-	const candidates = [
-		`${env.ProgramFiles ?? "C:/Program Files"}/PowerShell/7/pwsh.exe`,
-		`${env.LOCALAPPDATA ?? ""}/Microsoft/WindowsApps/pwsh.exe`,
-		`${env.USERPROFILE ?? ""}/scoop/shims/pwsh.exe`,
-	];
-	for (const candidate of candidates) if (fileExists(candidate)) return candidate;
-	for (const dir of (env.PATH ?? "").split(";")) {
-		if (!dir) continue;
-		const candidate = `${dir.replace(/[\\/]$/, "")}/pwsh.exe`;
-		if (fileExists(candidate)) return candidate;
-	}
-	return undefined;
-}
 // 进程判定在 classify.ts、GUI 窗口解析在 gui.ts,两者都从这里再导出
 import { classifyProcess } from "./classify.ts";
 import { parseGuiWindows } from "./gui.ts";

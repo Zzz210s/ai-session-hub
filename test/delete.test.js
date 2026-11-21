@@ -198,9 +198,10 @@ test("deleteSession:DSH 只有元数据(file 为空)时仍可删除", async () =
 	f.cleanup();
 });
 
-test("resolveRecycleShell:优先 pwsh(Windows PowerShell 5.1 从 Node 起一次要 5~7 秒)", () => {
-	const env = { ProgramFiles: "C:\Program Files", AIS_PWSH: "" };
-	const shell = resolveRecycleShell(env);
-	assert.ok(shell === "pwsh.exe" || /pwsh\.exe$/.test(shell), `应优先 pwsh,实际: ${shell}`);
-	assert.equal(resolveRecycleShell({ ...env, AIS_PWSH: "C:\tools\pwsh.exe" }), "C:\tools\pwsh.exe", "AIS_PWSH 可覆盖");
+test("resolveRecycleShell:与共享解析器一致(有 pwsh 就用 pwsh)", () => {
+	const env = { ProgramFiles: "C:/PF", LOCALAPPDATA: "C:/LA", USERPROFILE: "C:/U", PATH: "" };
+	const hasScoop = (p) => p === "C:/U/scoop/shims/pwsh.exe";
+	assert.equal(resolveRecycleShell(env, hasScoop), "C:/U/scoop/shims/pwsh.exe", "有 pwsh 就用它");
+	assert.equal(resolveRecycleShell(env, () => false), "powershell.exe", "没有 pwsh 才退回 5.1");
+	assert.equal(resolveRecycleShell({ ...env, AIS_PWSH: "C:/tools/pwsh.exe" }, hasScoop), "C:/tools/pwsh.exe", "AIS_PWSH 可覆盖");
 });

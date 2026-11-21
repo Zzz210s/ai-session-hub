@@ -482,14 +482,18 @@ A crashed or killed session does not remove its heartbeat file (a clean exit doe
 
 ### PowerShell engine
 
-`windows.ps1` / `focus.ps1` / `recycle.ps1` all run under PowerShell 7 (pwsh) — each was verified — but the default stays with the bundled `powershell.exe`, because five interleaved rounds of `windows.ps1` measured:
+**PowerShell 7 (pwsh) is now the default when it is installed.** All three scripts (`windows.ps1` / `focus.ps1` / `recycle.ps1`) were verified under pwsh, and the engine is resolved in exactly one place (`src/powershell.ts`).
 
-| Engine | Min | Avg |
+Measured 2026-11-21 (interleaved samples):
+
+| Engine | `windows.ps1` | bare start (`Write-Output hi`) |
 |---|---|---|
-| `powershell.exe` | **1254 ms** | **1363 ms** |
-| `pwsh` 7 | 1431 ms | 1714 ms |
+| `powershell.exe` (5.1) | 7087 / 12208 ms | 4820 / 10053 / 5218 ms |
+| `pwsh` 7 | 1869-6205 ms | 3281 / 548 / 511 ms |
 
-To switch: `AIS_PWSH=C:/path/to/pwsh.exe ais` (a broken pwsh falls back to powershell.exe automatically instead of failing every probe).
+Almost all of it is the fixed cost of antivirus scanning every `powershell.exe` launch. The 2026-11-19 measurement that favoured 5.1 (1431 vs 1254 ms) was taken when a bare 5.1 launch took 1.2 s — with a small fixed cost the comparison is mostly noise. After switching: live probe **18.9 s → 2.0 s**, current-tab probe **6.3-12.7 s → 1.0 s**.
+
+Knobs: `AIS_PWSH=0` forces 5.1 (troubleshooting), `AIS_PWSH=<path>` picks any engine, and a broken pwsh falls back to 5.1 automatically instead of failing every probe.
 
 ### Startup self-update progress
 

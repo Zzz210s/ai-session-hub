@@ -14,6 +14,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { resolvePowerShellEngine } from "./powershell.ts";
 import { fileURLToPath } from "node:url";
 
 // Linux 的 freedesktop 回收站实现在 recycle-linux.ts;这里再导出,调用方不用改导入路径
@@ -37,21 +38,12 @@ export function canRecycleToSystem(): boolean {
 }
 
 /**
- * 选一个 PowerShell 来解释 recycle.ps1。
- *
- * 实测这台机器上从 Node 起进程的耗时:Windows PowerShell 5.1 光启动就要 5~7 秒
- * (杀软每次扫 powershell.exe),PowerShell 7(pwsh)只要 0.6 秒 —— 而删除会话时
- * 这几秒里界面什么都不显示,用户会以为"按了 y 没反应"。所以优先 pwsh。
+ * 选一个 PowerShell 来解释 recycle.ps1 —— 直接复用共享解析器(src/powershell.ts),
+ * 不在这里再写一份候选列表:三处各写一份的结果就是改了一处、另两处还在用慢引擎
+ * (2026-11-21 实测 powershell.exe 启动 5-10 秒,pwsh 0.5 秒)。
  */
-export function resolveRecycleShell(env: NodeJS.ProcessEnv = process.env): string {
-	const override = (env.AIS_PWSH ?? "").trim();
-	if (override) return override;
-	const candidates = [
-		join(env.ProgramFiles ?? "C:\Program Files", "PowerShell", "7", "pwsh.exe"),
-		join(env.ProgramFiles ?? "C:\Program Files", "PowerShell", "7-preview", "pwsh.exe"),
-	];
-	for (const candidate of candidates) if (existsSync(candidate)) return candidate;
-	return "pwsh.exe";
+export function resolveRecycleShell(env: NodeJS.ProcessEnv = process.env, fileExists: (p: string) => boolean = existsSync): string {
+	return resolvePowerShellEngine(env, fileExists);
 }
 
 /**

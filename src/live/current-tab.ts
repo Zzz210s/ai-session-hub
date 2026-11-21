@@ -33,13 +33,13 @@ export function resetCurrentTab(): void {
 	inflight = null;
 }
 
-export function probeCurrentTabUncached(): Promise<CurrentTab | null> {
+export function probeCurrentTabUncached(options: { timeoutMs?: number } = {}): Promise<CurrentTab | null> {
 	if (process.platform !== "win32" || !existsSync(SCRIPT)) return Promise.resolve(null);
 	return new Promise((resolve) => {
 		execFile(
 			resolvePowerShellEngine(),
 			["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT],
-			{ windowsHide: true, timeout: 20_000 },
+			{ windowsHide: true, timeout: options.timeoutMs ?? 20_000 },
 			(error, stdout) => {
 				const text = (stdout ?? "").trim();
 				if (error || !text || text === "null") return resolve(null);
@@ -55,12 +55,18 @@ export function probeCurrentTabUncached(): Promise<CurrentTab | null> {
 	});
 }
 
-/** 取当前标签(带缓存);探测失败时缓存 null,避免每次打开都白等两秒 */
-export function currentTab(options: { refresh?: boolean } = {}): Promise<CurrentTab | null> {
+/**
+ * 取当前标签(带缓存);探测失败时缓存 null,避免每次打开都白等。
+ *
+ * `timeoutMs` 只在 refresh 时生效:开会话前那一次**必须限时** —— 等下要拿它算
+ * "开完切回哪一页",探得慢就干脆不等(退回缓存/不切),否则用户按 a 后要干等。
+ * 2026-11-21 实测该脚本一次约 1 秒(pwsh),慢的时候(杀软/负载)能到 6-13 秒。
+ */
+export function currentTab(options: { refresh?: boolean; timeoutMs?: number } = {}): Promise<CurrentTab | null> {
 	if (process.platform !== "win32") return Promise.resolve(null);
 	if (!options.refresh && cached !== undefined) return Promise.resolve(cached);
 	if (inflight) return inflight;
-	inflight = probeCurrentTabUncached().then((result) => {
+	inflight = probeCurrentTabUncached({ timeoutMs: options.timeoutMs }).then((result) => {
 		cached = result;
 		inflight = null;
 		return result;

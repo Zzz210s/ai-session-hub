@@ -468,14 +468,18 @@ CLI(`ais list` / `ais doctor`)不带这两个开关:**每次都真探真扫**,�
 
 ### PowerShell 引擎
 
-`windows.ps1` / `focus.ps1` / `recycle.ps1` 在 PowerShell 7(pwsh)下都能跑(已逐个验证),但**默认仍用系统自带的 powershell.exe** —— 5 轮交替实测 `windows.ps1`:
+**有 PowerShell 7(pwsh)就默认用它**。三份脚本(`windows.ps1` / `focus.ps1` / `recycle.ps1`)都在 pwsh 下验证过,一处解析、三处共用(`src/powershell.ts`)。
 
-| 引擎 | 最小 | 平均 |
+2026-11-21 实测(交替采样):
+
+| 引擎 | `windows.ps1` | 裸启动(`Write-Output hi`) |
 |---|---|---|
-| `powershell.exe` | **1254 ms** | **1363 ms** |
-| `pwsh` 7 | 1431 ms | 1714 ms |
+| `powershell.exe`(5.1) | 7087 / 12208 ms | 4820 / 10053 / 5218 ms |
+| `pwsh` 7 | 1869-6205 ms | 3281 / 548 / 511 ms |
 
-想切:`AIS_PWSH=C:/path/to/pwsh.exe ais`(pwsh 坏掉时自动回退到 powershell.exe,不会让探测一直失败)。
+差别几乎全在"每起一次 `powershell.exe` 被杀软扫一遍"这个固定开销上。2026-11-19 那次测得"pwsh 更慢"(1431 vs 1254ms),那是 5.1 启动只要 1.2 秒的时期 —— 固定开销小的时候比出来的是噪音。engines 切换后夜里实测:活体探测 **18.9 秒 → 2.0 秒**,本页标签探测 **6.3-12.7 秒 → 1.0 秒**。
+
+开关:`AIS_PWSH=0` 强制用 5.1(排障);`AIS_PWSH=<路径>` 指定任意引擎;pwsh 坏掉自动回退 5.1,不会让探测一直失败。
 
 ### 启动前自更新的进度
 

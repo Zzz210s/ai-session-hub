@@ -6,17 +6,19 @@
 # one (`wt new-tab` always activates the new tab; --no-focus is still an open feature
 # request, microsoft/terminal#17460).
 #
-# Why the foreground window and not the parent-process chain: a `wt` window is shared by
-# every tab, and the parent chain breaks whenever an intermediate process exits (measured:
-# the chain ended at a pid that no longer existed, so the lookup returned nothing). The
-# foreground window is exactly what `wt -w 0` means by "current window", and the user is
-# looking at it when they press the key.
+# 2026-11-21: this used to dot-source windows.ps1 -TabsOnly. That path also enumerates every
+# process (Get-CimInstance Win32_Process) and walks the UIA tree of every window: measured
+# 8.5-12.7 s per call on this machine, and `ais` paid it before it could open a session.
+# Now it is self-contained: UIA on the foreground window only, no process enumeration.
+# Measured afterwards: see the CHANGELOG entry.
 #
 # ASCII-only comments on purpose (PowerShell 5.1 reads non-BOM files as ANSI).
 param()
 
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 Add-Type @"
 using System;
 using System.Text;
@@ -24,30 +26,54 @@ using System.Runtime.InteropServices;
 public class AisFg {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
 }
 "@
 
-$fgHwnd = ""
+$fgHwnd = [IntPtr]::Zero
 try {
   $h = [AisFg]::GetForegroundWindow()
   $cls = New-Object System.Text.StringBuilder 128
   [void][AisFg]::GetClassName($h, $cls, 128)
-  if ($cls.ToString() -eq "CASCADIA_HOSTING_WINDOW_CLASS") { $fgHwnd = ([int64]$h).ToString() }
+  if ($cls.ToString() -eq "CASCADIA_HOSTING_WINDOW_CLASS") { $fgHwnd = $h }
 } catch { }
-if (-not $fgHwnd) { Write-Output "null"; return }
+if ($fgHwnd -eq [IntPtr]::Zero) { Write-Output "null"; return }
 
-# Reuse the tab enumeration instead of duplicating ~100 lines of UIA code. Dot-sourcing
-# keeps $result in this scope; its own JSON output is captured and discarded.
-$null = . (Join-Path $PSScriptRoot "windows.ps1") -TabsOnly
-$tabs = @($result.tabs | Where-Object { [string]$_.hwnd -eq $fgHwnd })
-if ($tabs.Count -eq 0) { Write-Output "null"; return }
+$windowPid = 0
+try {
+  $tmp = 0
+  [void][AisFg]::GetWindowThreadProcessId($fgHwnd, [ref]$tmp)
+  $windowPid = [int]$tmp
+} catch { }
 
-$hit = @($tabs | Where-Object { $_.selected } | Select-Object -First 1)
-if ($hit.Count -eq 0) { $hit = @($tabs | Select-Object -First 1) }
-
-[ordered]@{
-  hwnd      = [string]$hit[0].hwnd
-  windowPid = [int]$hit[0].windowPid
-  index     = [int]$hit[0].index
-  title     = [string]$hit[0].title
-} | ConvertTo-Json -Compress
+try {
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($fgHwnd)
+  if ($null -eq $root) { Write-Output "null"; return }
+  $cond = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [System.Windows.Automation.ControlType]::TabItem)
+  $tabs = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond)
+  $index = 0
+  $hit = $null
+  foreach ($t in $tabs) {
+    $selected = $false
+    try {
+      $pattern = $t.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+      $selected = [bool]$pattern.Current.IsSelected
+    } catch { }
+    if ($selected -and $null -eq $hit) {
+      $hit = [ordered]@{ index = $index; title = [string]$t.Current.Name }
+    }
+    $index++
+  }
+  if ($null -eq $hit) { Write-Output "null"; return }
+  [ordered]@{
+    hwnd      = ([int64]$fgHwnd).ToString()
+    windowPid = $windowPid
+    index     = [int]$hit.index
+    title     = [string]$hit.title
+  } | ConvertTo-Json -Compress
+} catch {
+  [Console]::Error.WriteLine("current-tab probe failed: " + $_.Exception.Message)
+  Write-Output "null"
+}

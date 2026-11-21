@@ -155,8 +155,11 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 		} else {
 			// 必须**现探**:缓存是看板启动时的那一次,用户此后开关过标签页就会错位,
 			// 而错位的后果就是 `focus-tab -t N` 把焦点切到**隔壁**标签 —— 用户看到的是
-			// "打开后自己跳到下一个标签页"(2026-11-19 的报障)。探不到才退回缓存。
-			const probe = await currentTab({ refresh: true }).catch(() => null);
+			// "打开后自己跳到下一个标签页"(2026-11-19 的报障)。
+			// 但**必须限时**:这一步挡在"开标签"前面,探测慢(杀软/负载下实测 6-13 秒)时
+			// 用户按 a 后什么都不发生。1.2 秒拿不到索引就算了,退回缓存 —— 宁可偶尔切错一页,
+			// 也不要干等十几秒(2026-11-21 报障「会话启动太慢」)。
+			const probe = await currentTab({ refresh: true, timeoutMs: 1200 }).catch(() => null);
 			focusTabIndex = probe?.index ?? currentTabCached()?.index ?? null;
 		}
 	}
