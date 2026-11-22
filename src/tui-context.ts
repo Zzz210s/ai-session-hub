@@ -3,11 +3,14 @@
  * 抽出的目的:让 tui.ts 只负责 I/O 与生命周期。
  */
 
+import type { SortMode } from "./sort.ts";
 import type { FilterKind } from "./tui-view.ts";
 import type { ActionKind, ExtensionKeys, KeyContext } from "./tui-keys.ts";
 
 export interface UiState {
 	filter: FilterKind;
+	/** 排序方式(s 键循环) */
+	sort: SortMode;
 	query: string;
 	searchMode: boolean;
 	cursor: number;
@@ -23,6 +26,8 @@ export interface ContextDeps {
 	quit(): void;
 	redraw(): void;
 	extensions?: ExtensionKeys;
+	/** s 键:循环切换排序(默认 → 字母 → 默认) */
+	cycleSort(): void;
 	pendingConfirm?(): string | undefined;
 	requestDelete(): void;
 	answerConfirm(accepted: boolean): void;
@@ -57,6 +62,7 @@ export function createContext(deps: ContextDeps): KeyContext {
 			ui.filter = kind;
 			ui.cursor = 0;
 		},
+		cycleSort: deps.cycleSort,
 		act: deps.act,
 		extensions: deps.extensions,
 		pendingConfirm: deps.pendingConfirm,

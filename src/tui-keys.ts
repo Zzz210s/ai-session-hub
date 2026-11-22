@@ -17,6 +17,7 @@ export interface ExtensionKeys {
 	hints(): string[];
 }
 
+
 export interface KeyContext {
 	isSearching(): boolean;
 	setSearching(value: boolean): void;
@@ -28,6 +29,8 @@ export interface KeyContext {
 	move(delta: number): void;
 	jumpTo(position: "top" | "bottom"): void;
 	setFilter(kind: FilterKind): void;
+	/** s 键:循环切换排序 */
+	cycleSort(): void;
 	act(kind: ActionKind): void | Promise<void>;
 	/** 拓展按键入口(可无) */
 	extensions?: ExtensionKeys;
@@ -93,6 +96,7 @@ export async function dispatchKey(key: KeyName, ctx: KeyContext): Promise<void> 
 			return;
 		}
 		if (hot === "r") return void ctx.refresh();
+		if (hot === "s") return ctx.cycleSort();
 		const digit = "1234".indexOf(ch);
 		if (digit >= 0) {
 			ctx.setFilter(FILTERS[digit]);

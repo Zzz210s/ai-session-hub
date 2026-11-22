@@ -3,6 +3,7 @@
  */
 
 import type { Tool } from "./model.ts";
+import { asSortMode, type SortMode } from "./sort.ts";
 
 export interface Args {
 	command: string;
@@ -20,6 +21,8 @@ export interface Args {
 	noUpdate: boolean;
 	/** 快速模式:实况允许用≤ 60 秒的旧快照,不等真探测 */
 	fast: boolean;
+	/** 排序:alpha=按会话名字母序;缺省 = 运行中优先 + 最近活跃 */
+	sort?: SortMode;
 }
 
 export const TOOLS: Tool[] = ["pi", "claude", "opencode", "zed", "dsh"];
@@ -36,6 +39,7 @@ export function parseArgs(argv: string[]): Args {
 		else if (token === "--version" || token === "-v") args.command = args.command || "version";
 		else if (token === "--yes" || token === "-y") args.yes = true;
 		else if (token === "--no-cache") args.noCache = true;
+		else if (token.startsWith("--sort=")) args.sort = asSortMode(token.slice("--sort=".length)) ?? args.sort;
 		else if (token.startsWith("--limit")) args.limit = Number(token.split("=")[1] ?? 40) || 40;
 		else if (token.startsWith("--tool=")) {
 			const list = token

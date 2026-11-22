@@ -16,7 +16,7 @@ A host-level **AI session overview** for your terminal (TUI): one keyboard-drive
                                   进程      pid 4242
                                   终端标签  窗口 12345 - 第 3 个
                                   会话文件  ~/.pi/agent/sessions/...jsonl
- a open in a new tab | f focus window | c copy | d delete | r refresh | 1-4 filter | / search | q quit
+ a open in a new tab | f focus window | c copy | d delete | s sort | r refresh | 1-4 filter | / search | q quit
 ```
 
 The list keeps only **tool + session name** (names you set with `/name` are highlighted in bright yellow); everything else — directory, age, size, pid, terminal tab, session file — lives in the right-hand detail pane.
@@ -152,6 +152,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
 | `a` | open the session in a **new tab of the current window** (configurable) |
 | `Ctrl+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
+| `s` | switch sorting: default (running first, then most recently active) ↔ alphabetical by session name (Chinese by pinyin); the choice is remembered |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
 | `x` / `Ctrl+W` | close a pane; `Ctrl+Q` returns focus from a pane to the list |
@@ -169,6 +170,16 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 Letter shortcuts are **case-insensitive**: `A`=`a`, `C`=`c`, `D`=`d`, `F`=`f`, `J`=`j`, `K`=`k`, `Q`=`q`, `R`=`r`; confirmation accepts `y`/`Y` and `n`/`N`. Text typed into the search box keeps its case.
 
 GUI sessions (Zed / DeepSeek Harness) have some keys that differ — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
+
+## Sorting
+
+The default order answers "what was I working on": running first, then most recently active. Press `s` for **alphabetical order**:
+
+- Latin letters first, then Chinese by pinyin (same convention as Windows Explorer); numbers sort numerically (`会话 2` before `会话 10`)
+- case-insensitive; equal names are ordered by tool, then by recency, so the order is stable
+- the header shows the active order (`排序 字母`) — otherwise the change would look like a bug
+- the choice is stored in `~/.ai-session-hub/config.json` under `ui.sort` and survives restarts
+- the CLI takes the same option: `ais list --sort=alpha`
 
 ## Deleting a session
 

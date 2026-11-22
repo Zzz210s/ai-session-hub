@@ -39,6 +39,9 @@ function fakeContext(overrides = {}) {
 		setFilter(kind) {
 			calls.push(`filter:${kind}`);
 		},
+		cycleSort() {
+			calls.push("cycle-sort");
+		},
 		async act(kind) {
 			calls.push(`act:${kind}`);
 		},
@@ -204,4 +207,19 @@ test("dispatchKey:搜索态按 Ctrl+A 不接管终端(那里是行首语义)", a
 	ctx.searching = true;
 	await dispatchKey("ctrl-a", ctx);
 	assert.deepEqual(ctx.calls, [], "搜索态里接管终端会让人莫名其妙");
+});
+
+test("dispatchKey:s 键切换排序(大写 S 同样有效)", async () => {
+	const lower = fakeContext();
+	await dispatchKey({ char: "s" }, lower);
+	const upper = fakeContext();
+	await dispatchKey({ char: "S" }, upper);
+	assert.deepEqual(lower.calls, ["cycle-sort"], "s 应切换排序");
+	assert.deepEqual(upper.calls, ["cycle-sort"], "快捷键不分大小写");
+
+	const searching = fakeContext();
+	searching.searching = true;
+	await dispatchKey({ char: "s" }, searching);
+	assert.equal(searching.query, "s", "搜索态里 s 是搜索词,不切换排序");
+	assert.deepEqual(searching.calls.filter((c) => c === "cycle-sort"), []);
 });

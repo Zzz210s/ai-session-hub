@@ -17,6 +17,8 @@ import { loadExtensions, type ExtensionContext, type HubExtension } from "./exte
 import { createExtensionContext } from "./tui-extension-ctx.ts";
 import { buildTuiState, renderScreen, stripAnsi, type FilterKind, type TuiState } from "./tui-view.ts";
 import { warmCurrentTab } from "./live/current-tab.ts";
+import { readSortMode } from "./prefs.ts";
+import { createExtensionKeys, createRefreshAction, createSortToggle } from "./tui-wiring.ts";
 import { fullTitle } from "./format.ts";
 
 const REFRESH_MS = 3000;
@@ -39,7 +41,8 @@ export async function runTui(options: TuiOptions): Promise<void> {
 	const stdin = process.stdin;
 	const stdout = process.stdout;
 	const optionsLoader = options.load;
-	const ui = { filter: options.filter ?? "all", query: "", searchMode: false, cursor: 0 };
+	// 排序偏好从 config.json 的 ui.sort 读(s 键改了就写回,下次仍是这个顺序)
+	const ui = { filter: options.filter ?? "all", sort: readSortMode(), query: "", searchMode: false, cursor: 0 };
 	let allRows: SessionView[] = [];
 	/** 正在删/已删掉的会话:防止异步重扫把"已删除"的那行又摆回来(见 tui-tombstones.ts) */
 	const tombstones = createTombstones();
@@ -55,6 +58,7 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		buildTuiState({
 			allRows: tombstones.filter(allRows),
 			filter: ui.filter,
+			sort: ui.sort,
 			query: ui.query,
 			searchMode: ui.searchMode,
 			cursor: ui.cursor,
@@ -144,27 +148,19 @@ export async function runTui(options: TuiOptions): Promise<void> {
 		ui,
 		rowCount: () => computeState().rows.length,
 		move: actions.move,
+		cycleSort: createSortToggle({
+			get: () => ui.sort,
+			set: (mode) => (ui.sort = mode),
+			resetCursor: () => (ui.cursor = 0),
+			notify: (text) => (message = text),
+			redraw: () => draw(true),
+		}),
 		act: actions.act,
 		pendingConfirm: () => deleteFlow.pending(),
 		requestDelete: () => deleteFlow.request(),
 		answerConfirm: (accepted) => deleteFlow.answer(accepted),
-		extensions: {
-			handle: async (key: KeyName) => {
-				for (const extension of extensions) if (await extension.handleKey?.(key, extCtx)) return true;
-				return false;
-			},
-			hints: () => extensions.flatMap((extension) => extension.hints ?? []),
-		},
-		refresh: async () => {
-			message = "强制刷新中(清缓存)…";
-			try {
-				await clearCache();
-			} catch {
-				/* 清缓存失败不阻塞刷新 */
-			}
-			await reload();
-			draw(true);
-		},
+		extensions: createExtensionKeys(extensions, extCtx),
+		refresh: createRefreshAction({ clear: clearCache, reload, notify: (text) => (message = text), redraw: () => draw(true) }),
 		quit: (why) => done(why),
 		redraw: () => draw(true),
 	});

@@ -4,6 +4,7 @@
  */
 
 import type { SessionView } from "./model.ts";
+import { SORT_LABELS, sortRows, type SortMode } from "./sort.ts";
 import { clampLine, displayWidth, fit, stripAnsi, sanitizeForDisplay } from "./text.ts";
 import { renderBody } from "./tui-layout.ts";
 
@@ -18,6 +19,8 @@ export interface TuiState {
 	rows: SessionView[];
 	totals: { all: number; running: number; attention: number; stored: number };
 	filter: FilterKind;
+	/** 当前排序方式(默认 / 字母);仅影响显示顺序 */
+	sort: SortMode;
 	query: string;
 	searchMode: boolean;
 	cursor: number;
@@ -70,6 +73,8 @@ export function totalsOf(rows: SessionView[]): TuiState["totals"] {
 export function buildTuiState(input: {
 	allRows: SessionView[];
 	filter: FilterKind;
+	/** 排序方式;缺省 = 默认顺序(不排序) */
+	sort?: SortMode;
 	query: string;
 	searchMode: boolean;
 	cursor: number;
@@ -82,11 +87,13 @@ export function buildTuiState(input: {
 	customHints?: string[];
 	now?: Date;
 }): TuiState {
-	const rows = filterRows(input.allRows, input.filter, input.query);
+	const sort = input.sort ?? "default";
+	const rows = filterRows(sortRows(input.allRows, sort), input.filter, input.query);
 	return {
 		rows,
 		totals: totalsOf(input.allRows),
 		filter: input.filter,
+		sort,
 		query: input.query,
 		searchMode: input.searchMode,
 		cursor: Math.min(input.cursor, Math.max(0, rows.length - 1)),
@@ -116,7 +123,8 @@ function headerLine(state: TuiState): string {
 		`共 ${state.totals.all}`,
 		`${FG_GREEN}运行中 ${state.totals.running}${RESET}`,
 		state.totals.attention > 0 ? `${FG_YELLOW}需关注 ${state.totals.attention}${RESET}` : "需关注 0",
-	];
+		state.sort === undefined || state.sort === "default" ? "" : `排序 ${SORT_LABELS[state.sort]}`, // 默认顺序不占表头
+	].filter(Boolean);
 	const plain = stats.join(" | ");
 	const gap = Math.max(1, state.width - displayWidth("AI 会话总览") - displayWidth(plain) - 3);
 	return ` ${BOLD}AI 会话总览${RESET}${" ".repeat(gap)}${DIM}${plain}${RESET} `;
@@ -154,8 +162,8 @@ function footerText(state: TuiState): string {
 		: state.searchMode
 			? "输入即筛选 | Enter 完成 | Esc 取消搜索 | ⌫ 删空退出"
 			: state.rows[state.cursor]?.kind === "gui"
-				? "Enter 聚焦窗口 | c 复制会话信息 | d 删除(DSH) | q 退出"
-				: "a 新标签继续 | Ctrl+A 就地接管 | f 聚焦窗口 | c 复制 | d 删除 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出";
+				? "Enter 聚焦窗口 | c 复制会话信息 | d 删除(DSH) | s 排序 | q 退出"
+				: "a 新标签继续 | Ctrl+A 就地接管 | f 聚焦窗口 | c 复制 | d 删除 | s 排序 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出";
 	const message = state.confirm ?? state.message;
 	return message ? `${keys} | ${sanitizeForDisplay(message)}` : keys;
 }

@@ -167,3 +167,22 @@ test("搜索态:底部提示换成搜索键位并写明退出方式", () => {
 	assert.match(footer, /⌫ 删空退出/, "并给出第二条退出路径");
 	assert.ok(!footer.includes("d 删除"), "搜索态下其它快捷键不生效,不该继续显示");
 });
+
+test("buildTuiState:sort=alpha 时行按名字排,表头标出当前排序", () => {
+	const rows = [view({ id: "a", name: "博客笔记" }), view({ id: "b", name: "ais 面板" }), view({ id: "c", name: "Zed 汉化" })];
+	const built = buildTuiState({ allRows: rows, filter: "all", sort: "alpha", query: "", searchMode: false, cursor: 0, width: 110, height: 12, now: NOW });
+	assert.deepEqual(built.rows.map((r) => r.name), ["ais 面板", "Zed 汉化", "博客笔记"], "拉丁在前、中文按拼音在后");
+	const header = renderScreen(built).map(stripAnsi).find((line) => line.includes("AI 会话总览")) ?? "";
+	assert.match(header, /排序 字母/, "非默认排序要在表头写出来(否则用户不知道为什么顺序变了)");
+});
+
+test("buildTuiState:默认排序时表头不额外占位", () => {
+	const built = buildTuiState({ allRows: [view({ id: "a", name: "ais" })], filter: "all", query: "", searchMode: false, cursor: 0, width: 110, height: 12, now: NOW });
+	const header = renderScreen(built).map(stripAnsi).find((line) => line.includes("AI 会话总览")) ?? "";
+	assert.doesNotMatch(header, /排序/, "默认顺序是多数情况,不加字段");
+});
+
+test("底部提示列出 s 排序", () => {
+	const text = renderScreen(state()).map(stripAnsi);
+	assert.ok(text.some((line) => line.includes("s 排序")), "键位提示要能发现排序功能");
+});

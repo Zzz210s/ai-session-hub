@@ -23,6 +23,7 @@ import type { SessionView, Tool } from "./model.ts";
 import { loadViews } from "./hub.ts";
 import { formatRow, summarize, title } from "./format.ts";
 import { rankByQuery } from "./fuzzy.ts";
+import { sortRows } from "./sort.ts";
 import { sweepHeartbeats } from "./live/heartbeat.ts";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -91,6 +92,8 @@ async function main(): Promise<void> {
 
 	let list = views;
 	if (args.liveOnly) list = list.filter((view) => view.state === "running");
+	// --sort=alpha:按会话名的字母序(默认是运行中优先 + 最近活跃)
+	if (args.sort) list = sortRows(list, args.sort);
 	if (args.query && (args.command === "focus" || args.command === "resume")) {
 		list = rankByQuery(list, args.query, (view) => `${title(view)} ${view.cwd} ${view.tool} ${view.id}`, 500);
 	}
@@ -163,7 +166,7 @@ async function main(): Promise<void> {
 	}
 
 	if (args.command && args.command !== "tui") {
-		console.error(`未知命令: ${args.command}\n用法: ais [list|doctor|focus <查询>|resume <查询>] [--json] [--live] [--tool=pi,claude,opencode]`);
+		console.error(`未知命令: ${args.command}\n用法: ais [list|doctor|focus <查询>|resume <查询>] [--json] [--live] [--sort=alpha] [--tool=pi,claude,opencode]`);
 		process.exitCode = 2;
 		return;
 	}

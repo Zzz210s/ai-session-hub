@@ -65,3 +65,10 @@ test("version:ais version / --version / -v 都识别为命令", () => {
 	assert.equal(parseArgs(["-v"]).query, "", "version 不该落到 query 里");
 	assert.equal(parseArgs(["list", "--version"]).command, "list", "已有命令时不覆盖");
 });
+
+test("parseArgs:--sort=alpha 只认 alpha / default(打错不影响默认顺序)", () => {
+	assert.equal(parseArgs(["list", "--sort=alpha"]).sort, "alpha");
+	assert.equal(parseArgs(["list", "--sort=default"]).sort, "default");
+	assert.equal(parseArgs(["list", "--sort=name"]).sort, undefined);
+	assert.equal(parseArgs(["list"]).sort, undefined, "不带参数时保持默认顺序");
+});
