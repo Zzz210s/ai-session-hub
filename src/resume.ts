@@ -5,7 +5,7 @@
  * 放在 actions.ts 里会和"打开方式"互相 import(循环)。
  */
 
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionView } from "./model.ts";
 import { shellFlavor, type ShellFlavor } from "./shell.ts";
@@ -20,42 +20,54 @@ const IS_WINDOWS = process.platform === "win32";
 export function resolveCliCommand(tool: SessionView["tool"]): string {
 	// 显式覆盖优先(AIS_PI_BIN / AIS_CLAUDE_BIN / AIS_OPENCODE_BIN)
 	const override = cliOverride(tool);
-	if (override && existsSync(override)) return override.replace(/\\/g, "/");
-	const fromPath = pathCandidates(tool);
-	if (!IS_WINDOWS) return fromPath[0] ?? tool;
+	if (override) return toPosix(override);
+	const found = candidatesFor(tool).find(isFile);
+	return found ? toPosix(found) : tool;
+}
+
+/**
+ * 候选路径,按"谁更可能是真可执行文件"排序。
+ *
+ * 顺序的讲究(2026-11-22 踩到的):
+ *  1. `.exe` 优先 —— npm / pnpm 在 Windows 上会同时放一个**无扩展名的 sh 脚本**当 shim;
+ *     裸名先命中它,交给 bash 后跑的是个针对 JS 入口的包装脚本,bin 指向 `.exe` 时会直接失败。
+ *  2. 包管理器目录**显式写出来**,不只靠 PATH —— 从快捷方式/资源管理器拉起的进程可能继承
+ *     一份安装前的旧 PATH(Explorer 登录时就快照了),那时 PATH 里根本没有 npm 目录。
+ */
+function candidatesFor(tool: SessionView["tool"]): string[] {
 	const local = process.env.LOCALAPPDATA ?? "";
 	const roaming = process.env.APPDATA ?? "";
 	const home = process.env.USERPROFILE ?? "";
-	const candidates: Record<string, string[]> = {
-		// 先看新版 pnpm 布局(pnpm 10+: <local>/pnpm/bin),旧 shim 指向 global/5(旧版本),
-		// 曾经导致 ais 拉起的会话一直跑旧 pi + 旧扩展集
-		pi: [join(local, "pnpm", "bin", "pi.CMD"), join(local, "pnpm", "bin", "pi.exe"), ...fromPath, join(local, "pnpm", "pi.CMD")],
-		claude: [join(roaming, "npm", "claude.CMD"), join(roaming, "npm", "claude.exe"), ...fromPath, join(local, "pnpm", "claude.CMD")],
-		// opencode:官方安装器落 ~/.opencode/bin(pnpm/npm 只在用包管理器装时才有),
-		// 还有 scoop / bun / winget 三种常见来源 —— 少列一处就是"命令跑不起来"
+	const names = IS_WINDOWS ? [".exe", ".EXE", ".cmd", ".CMD", ""] : [""];
+	const byName = (dir: string): string[] => (dir ? names.map((suffix) => `${toPosix(dir)}/${tool}${suffix}`) : []);
+	const common = [...byName(`${roaming}/npm`), ...byName(`${local}/pnpm/bin`), ...byName(`${local}/pnpm`), ...pathCandidates(tool)];
+	const extra: Record<string, string[]> = {
+		// 各工具自己更"正规"的位置先试;pnpm 10+ 布局(<local>/pnpm/bin)要排在旧 shim 前
+		pi: [...byName(`${local}/pnpm/bin`), ...common],
+		claude: [...byName(`${roaming}/npm`), ...common],
 		opencode: [
-			join(home, ".opencode", "bin", "opencode.exe"),
-			join(home, ".opencode", "bin", "opencode"),
-			join(home, ".bun", "bin", "opencode.exe"),
-			join(home, "scoop", "shims", "opencode.exe"),
-			join(local, "Programs", "opencode", "opencode.exe"),
-			join(local, "Microsoft", "WinGet", "Links", "opencode.exe"),
-			join(local, "pnpm", "bin", "opencode.CMD"),
-			join(local, "pnpm", "bin", "opencode.exe"),
-			...fromPath,
-			join(home, ".local", "bin", "opencode"),
-			join(local, "pnpm", "opencode.CMD"),
+			...byName(`${home}/.opencode/bin`), // 官方安装器
+			...byName(`${home}/.bun/bin`),
+			...byName(`${home}/scoop/shims`),
+			...byName(`${local}/Programs/opencode`),
+			...byName(`${local}/Microsoft/WinGet/Links`),
+			...common,
+			...byName(`${home}/.local/bin`), // Linux/WSL 的官方安装器
 		],
 	};
-	for (const candidate of candidates[tool] ?? []) {
-		try {
-			if (existsSync(candidate)) return candidate.replace(/\\/g, "/");
-		} catch {
-			/* 继续 */
-		}
-	}
-	return tool;
+	return extra[tool] ?? common;
 }
+
+/** 只认**文件**(目录同名会让 existsSync 通过,结果启动时才发现跑不了) */
+function isFile(path: string): boolean {
+	try {
+		return statSync(path).isFile();
+	} catch {
+		return false;
+	}
+}
+
+const toPosix = (path: string): string => path.replace(/\\/g, "/");
 
 function cliOverride(tool: SessionView["tool"]): string | undefined {
 	const key = `AIS_${tool.toUpperCase()}_BIN`;
@@ -71,7 +83,7 @@ function pathCandidates(tool: string): string[] {
 		for (const suffix of suffixes) {
 			const candidate = `${dir.replace(/[\\/]$/, "")}/${tool}${suffix}`;
 			try {
-				if (existsSync(candidate)) out.push(candidate);
+				if (isFile(candidate)) out.push(candidate);
 			} catch {
 				/* 该目录不可读,跳过 */
 			}
@@ -89,7 +101,8 @@ function pathCandidates(tool: string): string[] {
  */
 export function cliAvailable(tool: SessionView["tool"]): boolean {
 	const command = resolveCliCommand(tool);
-	return command.includes("/") || command.includes("\\") ? existsSync(command) : false;
+	// 解析不出来时返回值就是裸命令名(不含分隔符),那一定是"没找到"
+	return command.includes("/") ? isFile(command) : false;
 }
 
 /** 会话数据的常见位置(给"没找到可执行文件"的提示用,说明"数据还在") */

@@ -89,7 +89,7 @@
 ./install.sh --yes --install-node             # 缺 Node 时顺带从 nodejs.org 装官方 Node 24
 ./install.sh --uninstall                      # 卸载(删程序目录 + 撤 PATH 条目)
 
-powershell -ExecutionPolicy Bypass -File install.ps1            # Windows:装到 %LOCALAPPDATA%\Programsi-session-hub
+powershell -ExecutionPolicy Bypass -File install.ps1            # Windows:装到 %LOCALAPPDATA%\Programs\ai-session-hub
 powershell -ExecutionPolicy Bypass -File install.ps1 -Yes -InstallNode
 powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 ```
@@ -175,7 +175,16 @@ GUI 会话(Zed / DeepSeek Harness)有部分键位不同——见下文「GUI 会
 装在别处可用 AIS_OPENCODE_BIN=<路径> 指过来;要用已有的会话数据也可按 C 复制命令到已装它的环境执行
 ```
 
-ais 在打开前逐个候选路径核对可执行文件(官方安装器的 `~/.opencode/bin`、scoop、bun、pnpm/npm、winget,以及 PATH 里的 `.exe`/`.cmd`),找不到就只提示、不开窗口。`C 复制命令`照旧可用(复制出来的命令贴到装了它的环境里能跑),`Ctrl+A` 就地接管也会先拦一道。
+ais 在打开前逐个候选路径核对可执行文件,找不到就只提示、不开窗口。查找顺序:
+
+1. `AIS_<TOOL>_BIN`(显式覆盖,如 `AIS_OPENCODE_BIN`)
+2. 该工具自己的正规位置(如 opencode 官方安装器的 `~/.opencode/bin`、bun、scoop、winget)
+3. 包管理器目录**显式列出**(`%APPDATA%\npm`、`%LOCALAPPDATA%\pnpm\bin`)—— 不只靠 PATH:从快捷方式拉起的进程可能继承一份安装前的旧 PATH
+4. PATH
+
+Windows 上同一工具会同时存在 `.exe`、`.cmd`、`ps1` 和一个**无扩展名的 sh 脚本**,所以按 `.exe → .cmd → 裸名` 的顺序取,并且只认**文件**(同名目录不算)。
+
+`C 复制命令`照旧可用(复制出来的命令贴到装了它的环境里能跑,提示会注明本机没找到),`Ctrl+A` 就地接管也会先拦一道。
 
 ## 排序
 
@@ -274,8 +283,8 @@ export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 **在 PowerShell 里使用**:`setup.sh` 会安装三种启动器到 `~/bin`——`ais`(bash)、`ais.cmd`(cmd)、`ais.ps1`(PowerShell):
 
 ```powershell
-& $HOMEinis.ps1            # 打开 TUI
-& $HOMEinis.ps1 list --live
+& $HOME\bin\ais.ps1            # 打开 TUI
+& $HOME\bin\ais.ps1 list --live
 ```
 
 **聚焦已有窗口的两种情形**:

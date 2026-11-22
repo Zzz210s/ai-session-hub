@@ -170,21 +170,28 @@ test("buildWtArgs:新窗口模式/没索引时不追加 focus-tab", () => {
 });
 
 test("openSession:可执行文件不在时不开标签,而是说清原因(2026-11-22 的 127 报障)", async () => {
-	if (cliAvailable("opencode")) return; // 装了 opencode 的环境里这条没有意义
-	const result = await openSession({
-		tool: "opencode",
-		id: "ses_abc",
-		file: "",
-		cwd: process.cwd(),
-		name: "open 会话",
-		topic: "open 会话",
-		firstMessage: "",
-		createdAt: new Date(),
-		updatedAt: new Date(),
-		state: "stored",
-		attention: false,
-	});
-	assert.equal(result.ok, false, "不能报告成功");
-	assert.match(result.detail, /没找到 opencode 可执行文件/, "要说清是没装,不是会话坏了");
-	assert.doesNotMatch(result.detail, /已在.*启动/, "没装就别假装开过标签");
+	// 用 AIS_OPENCODE_BIN 指到一个不存在的路径,制造"没装"的确定性场景
+	const saved = process.env.AIS_OPENCODE_BIN;
+	process.env.AIS_OPENCODE_BIN = "C:/definitely/not/here/opencode.exe";
+	try {
+		const result = await openSession({
+			tool: "opencode",
+			id: "ses_abc",
+			file: "",
+			cwd: process.cwd(),
+			name: "open 会话",
+			topic: "open 会话",
+			firstMessage: "",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			state: "stored",
+			attention: false,
+		});
+		assert.equal(result.ok, false, "不能报告成功");
+		assert.match(result.detail, /没找到 opencode 可执行文件/, "要说清是没装,不是会话坏了");
+		assert.doesNotMatch(result.detail, /已在.*启动/, "没装就别假装开过标签");
+	} finally {
+		if (saved === undefined) delete process.env.AIS_OPENCODE_BIN;
+		else process.env.AIS_OPENCODE_BIN = saved;
+	}
 });

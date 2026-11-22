@@ -91,7 +91,7 @@ Artifacts live on the [Releases](https://github.com/Zzz210s/ai-session-hub/relea
 ./install.sh --yes --install-node             # also fetch official Node 24 from nodejs.org when missing
 ./install.sh --uninstall                      # remove program dir + PATH entry
 
-powershell -ExecutionPolicy Bypass -File install.ps1            # Windows: installs to %LOCALAPPDATA%\Programsi-session-hub
+powershell -ExecutionPolicy Bypass -File install.ps1            # Windows: installs to %LOCALAPPDATA%\Programs\ai-session-hub
 powershell -ExecutionPolicy Bypass -File install.ps1 -Yes -InstallNode
 powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 ```
@@ -180,7 +180,16 @@ Session data can outlive the binary: a machine move, a session created under WSL
 装在别处可用 AIS_OPENCODE_BIN=<路径> 指过来;要用已有的会话数据也可按 C 复制命令到已装它的环境执行
 ```
 
-Before opening, ais checks every known location for the executable (the official installer's `~/.opencode/bin`, scoop, bun, pnpm/npm, winget, plus `.exe`/`.cmd` entries on `PATH`). If none exists it reports the reason instead of opening a window. `C` still copies the command (useful in an environment that has the CLI), and `Ctrl+A` attach is guarded the same way.
+Before opening, ais resolves the executable in this order, and reports the reason instead of opening a window when nothing is found:
+
+1. `AIS_<TOOL>_BIN` (explicit override, e.g. `AIS_OPENCODE_BIN`)
+2. the tool's own canonical locations (opencode's installer drops `~/.opencode/bin`; also bun, scoop, winget)
+3. package-manager directories listed **explicitly** (`%APPDATA%\npm`, `%LOCALAPPDATA%\pnpm\bin`) — `PATH` alone is not enough, because a process started from a shortcut can inherit a `PATH` snapshot taken before the CLI was installed
+4. `PATH`
+
+On Windows a single tool ships as `.exe`, `.cmd`, `.ps1` **and** an extensionless sh script, so the order is `.exe → .cmd → bare name`, and only **files** count (a directory with the same name does not).
+
+`C` still copies the command (the message notes the CLI is missing locally), and `Ctrl+A` attach is guarded the same way.
 
 ## Sorting
 
@@ -281,8 +290,8 @@ export AIS_SHELL="C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 **Using it from PowerShell**: `setup.sh` installs three launchers into `~/bin` — `ais` (bash), `ais.cmd` (cmd), `ais.ps1` (PowerShell):
 
 ```powershell
-& $HOMEinis.ps1            # open the TUI
-& $HOMEinis.ps1 list --live
+& $HOME\bin\ais.ps1            # open the TUI
+& $HOME\bin\ais.ps1 list --live
 ```
 
 **Focusing an existing window** — two cases:

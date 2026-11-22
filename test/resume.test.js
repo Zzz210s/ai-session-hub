@@ -32,12 +32,44 @@ test("resumeCommand:claude / opencode 用会话 id,不做多余引号", () => {
 
 /* ---------- 可执行文件检测(2026-11-22 报障:opencode 未安装,ais 仍开标签 → command not found 127) ---------- */
 
-test("cliAvailable:本机的 pi / claude 能解析到 .CMD,opencode 没有安装", () => {
-	// 这台机器上 opencode 确实没装(只有会话数据库),所以它必须被判为不可用
-	assert.equal(cliAvailable("pi"), true, "pi 应能找到可执行文件");
-	assert.ok(resolveCliCommand("pi").includes("/"), "应解析成绝对路径,而不是裸命令名");
-	assert.equal(cliAvailable("opencode"), false, "opencode 未安装 → 不可用");
-	assert.equal(resolveCliCommand("opencode"), "opencode", "解析不出路径时退回裸命令名(复制到别处还能用)");
+/** 临时改环境变量(测试之间互不影响) */
+function withEnv(patch, body) {
+	const saved = {};
+	for (const key of Object.keys(patch)) {
+		saved[key] = process.env[key];
+		process.env[key] = patch[key];
+	}
+	try {
+		return body();
+	} finally {
+		for (const key of Object.keys(patch)) {
+			if (saved[key] === undefined) delete process.env[key];
+			else process.env[key] = saved[key];
+		}
+	}
+}
+
+test("resolveCliCommand:pi / claude 解析成绝对路径(而不是裸命令名)", () => {
+	assert.ok(resolveCliCommand("pi").includes("/"), "pi 应是绝对路径");
+	assert.ok(resolveCliCommand("claude").includes("/"), "claude 应是绝对路径");
+});
+
+test("resolveCliCommand:AIS_<TOOL>_BIN 指哪打哪(cliAvailable 跟着走)", () => {
+	const bogus = "C:/definitely/not/here/opencode.exe";
+	withEnv({ AIS_OPENCODE_BIN: bogus }, () => {
+		assert.equal(resolveCliCommand("opencode"), bogus, "显式覆盖优先");
+		assert.equal(cliAvailable("opencode"), false, "路径不存在就是不可用");
+	});
+	// 指到本文件自己(任何真实文件都行,这里借 node 可执行)
+	withEnv({ AIS_OPENCODE_BIN: process.execPath }, () => {
+		assert.equal(cliAvailable("opencode"), true, "指向真实文件即可用");
+	});
+});
+
+test("cliAvailable:目录同名不算可用(existsSync 会通过,但跑不起来)", () => {
+	withEnv({ AIS_OPENCODE_BIN: "C:/Windows" }, () => {
+		assert.equal(cliAvailable("opencode"), false, "目录不能被当成可执行文件");
+	});
 });
 
 test("missingCliMessage:说清没装、数据还在、给出三条出路,且不谎称已启动", () => {
