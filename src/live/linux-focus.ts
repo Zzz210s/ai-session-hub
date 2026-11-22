@@ -68,8 +68,8 @@ export function openInNewTerminal(command: string, cwd: string): { ok: boolean; 
 		const terminal = (process.env.TERMINAL ?? "").trim() || "x-terminal-emulator";
 		const child = spawn(terminal, ["-e", command], { detached: true, stdio: "ignore", cwd });
 		child.unref();
-		return { ok: true, detail: `已用 ${terminal} 打开(若无反应,按 c 复制命令手贴)` };
+		return { ok: true, detail: `已用 ${terminal} 打开(若无反应,按 C 复制命令手贴)` };
 	} catch (error) {
-		return { ok: false, detail: `新终端启动失败:${error instanceof Error ? error.message : String(error)}(可设 $TERMINAL,或按 c 复制命令)` };
+		return { ok: false, detail: `新终端启动失败:${error instanceof Error ? error.message : String(error)}(可设 $TERMINAL,或按 C 复制命令)` };
 	}
 }

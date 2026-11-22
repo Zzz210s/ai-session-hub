@@ -16,7 +16,7 @@ A host-level **AI session overview** for your terminal (TUI): one keyboard-drive
                                   进程      pid 4242
                                   终端标签  窗口 12345 - 第 3 个
                                   会话文件  ~/.pi/agent/sessions/...jsonl
- a open in a new tab | f focus window | c copy | d delete | s sort | r refresh | 1-4 filter | / search | q quit
+ A open in a new tab | F focus window | C copy | D delete | S sort | R refresh | 1-4 filter | / search | Q quit
 ```
 
 The list keeps only **tool + session name** (names you set with `/name` are highlighted in bright yellow); everything else — directory, age, size, pid, terminal tab, session file — lives in the right-hand detail pane.
@@ -150,40 +150,40 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 |---|---|
 | `↑` `↓` / `j` `k` / `ctrl+p` `ctrl+n` | move the cursor (the selected row is highlighted full-width); `PageUp`/`PageDown` page, `Home`/`End` jump |
 | `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
-| `a` | open the session in a **new tab of the current window** (configurable) |
+| `A` | open the session in a **new tab of the current window** (configurable) |
 | `Ctrl+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
-| `s` | switch sorting: default (running first, then most recently active) ↔ alphabetical by session name (Chinese by pinyin); the choice is remembered |
+| `S` | switch sorting: running/date (running first, then most recently active) ↔ alphabetical by session name (Chinese by pinyin); the choice is remembered |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
 | `x` / `Ctrl+W` | close a pane; `Ctrl+Q` returns focus from a pane to the list |
-| `f` | focus the session's terminal window |
-| `c` | copy the resume command |
-| `d` | delete the selected session (asks for confirmation; see below) |
+| `F` | focus the session's terminal window |
+| `C` | copy the resume command |
+| `D` | delete the selected session (asks for confirmation; see below) |
 | `1` `2` `3` `4` | filter: running / needs attention / all / historical |
 | `/` | search (name, directory, tool, session id; space-separated terms) |
 | `Esc` | while searching: cancel the search and clear the query |
 | `Enter` | while searching: finish and keep the filter |
 | `Backspace` | while searching: delete a character; press once more on an empty query to leave search |
-| `r` | refresh now |
-| `q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
+| `R` | refresh now |
+| `Q` / `Esc` / `Ctrl+C` | quit (the reason is printed on exit, e.g. `已退出(q)`) |
 
-Letter shortcuts are **case-insensitive**: `A`=`a`, `C`=`c`, `D`=`d`, `F`=`f`, `J`=`j`, `K`=`k`, `Q`=`q`, `R`=`r`; confirmation accepts `y`/`Y` and `n`/`N`. Text typed into the search box keeps its case.
+Single-letter shortcuts are **always written in upper case** in the hints (`A` `C` `D` `F` `J` `K` `Q` `R` `S`); pressing either case works (CapsLock included). Confirmation accepts `y`/`Y` and `n`/`N`, and text typed into the search box keeps its case.
 
 GUI sessions (Zed / DeepSeek Harness) have some keys that differ — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
 
 ## Sorting
 
-The default order answers "what was I working on": running first, then most recently active. Press `s` for **alphabetical order**:
+The default order is called **running/date**: running first, then most recently active — it answers "what was I working on". Press `S` for **alphabetical order**:
 
 - Latin letters first, then Chinese by pinyin (same convention as Windows Explorer); numbers sort numerically (`会话 2` before `会话 10`)
 - case-insensitive; equal names are ordered by tool, then by recency, so the order is stable
-- the header shows the active order (`排序 字母`) — otherwise the change would look like a bug
+- the header shows the active order only when it is not the default (`排序 字母`) — otherwise the change would look like a bug
 - the choice is stored in `~/.ai-session-hub/config.json` under `ui.sort` and survives restarts
 - the CLI takes the same option: `ais list --sort=alpha`
 
 ## Deleting a session
 
-Press `d` on a session and confirm with `y`. Three safety rules apply:
+Press `D` on a session and confirm with `y`. Three safety rules apply:
 
 1. **Running sessions cannot be deleted** — the file is being written to; focus the window (`f`) and exit the session first.
 2. **Nothing is hard-deleted**: the session file is moved to `~/.ai-session-hub/trash/` (`<timestamp>__<tool>__<name>.jsonl`), so it can be restored by moving it back.

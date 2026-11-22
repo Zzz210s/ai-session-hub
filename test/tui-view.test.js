@@ -71,7 +71,7 @@ test("renderScreen:包含标题栏、统计、筛选、会话行与提示", () =
 	assert.match(text[1], /1 运行中 1/);
 	assert.match(text.join("\n"), /运行中的/);
 	assert.match(text.join("\n"), /历史的/);
-	assert.match(text[text.length - 1], /a 新标签继续/);
+	assert.match(text[text.length - 1], /A 新标签继续/);
 	assert.equal(lines.length, 20);
 });
 
@@ -94,7 +94,7 @@ test("renderScreen:底部统一为「键位 | 消息」,消息在后", () => {
 	const withMessage = { ...state(), message: "已删除「演示会话」:已放入系统回收站" };
 	const text = stripAnsi(renderScreen(withMessage).join("\n"));
 	const footer = text.split("\n").filter((line) => line.includes("就地接管")).pop() ?? "";
-	assert.match(footer, /就地接管.*d 删除.*r 刷新.*1-4 筛选/, "键位顺序:删除 -> 刷新 -> 筛选");
+	assert.match(footer, /就地接管.*D 删除.*R 刷新.*1-4 筛选/, "键位顺序:删除 -> 刷新 -> 筛选");
 	const confirmState = { ...state(), confirm: "删除「演示会话」?会放入系统回收站(可在资源管理器还原)" };
 	const confirmFooter = stripAnsi(renderScreen(confirmState).join("\n")).split("\n").filter((line) => line.includes("确认")).pop() ?? "";
 	assert.match(confirmFooter, /^\s*y 确认 \/ n 取消 \| 删除「演示会话」/, "确认态同样键位在前");
@@ -120,8 +120,8 @@ test("renderScreen:GUI 会话提示聚焦/复制,并如实列出 DSH 可删除",
 	const rows = [view({ id: "z", tool: "zed", kind: "gui", appRunning: false })];
 	const footer = stripAnsi(renderScreen(state({ rows, cursor: 0 })).at(-1));
 	assert.match(footer, /Enter 聚焦窗口/);
-	assert.match(footer, /c 复制会话信息/);
-	assert.match(footer, /d 删除\(DSH\)/);
+	assert.match(footer, /C 复制会话信息/);
+	assert.match(footer, /D 删除\(DSH\)/);
 });
 
 test("renderScreen:归档会话带 [归档] 且名称灰显、置顶会话带 [置顶]", () => {
@@ -165,7 +165,7 @@ test("搜索态:底部提示换成搜索键位并写明退出方式", () => {
 	const footer = text.filter((line) => line.includes("取消搜索")).pop() ?? "";
 	assert.match(footer, /Esc 取消搜索/, "必须明写 Esc 退出");
 	assert.match(footer, /⌫ 删空退出/, "并给出第二条退出路径");
-	assert.ok(!footer.includes("d 删除"), "搜索态下其它快捷键不生效,不该继续显示");
+	assert.ok(!footer.includes("D 删除"), "搜索态下其它快捷键不生效,不该继续显示");
 });
 
 test("buildTuiState:sort=alpha 时行按名字排,表头标出当前排序", () => {
@@ -182,7 +182,9 @@ test("buildTuiState:默认排序时表头不额外占位", () => {
 	assert.doesNotMatch(header, /排序/, "默认顺序是多数情况,不加字段");
 });
 
-test("底部提示列出 s 排序", () => {
+test("底部提示列出 S 排序,且键位用大写字母", () => {
 	const text = renderScreen(state()).map(stripAnsi);
-	assert.ok(text.some((line) => line.includes("s 排序")), "键位提示要能发现排序功能");
+	assert.ok(text.some((line) => line.includes("S 排序")), "键位提示要能发现排序功能");
+	const footer = text.filter((line) => line.includes("新标签继续")).pop() ?? "";
+	assert.match(footer, /A 新标签继续 \| Ctrl\+A 就地接管 \| F 聚焦窗口 \| C 复制 \| D 删除/, "单字母键一律大写");
 });

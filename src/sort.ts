@@ -22,7 +22,7 @@ export const SORT_MODES: SortMode[] = ["default", "alpha"];
 
 /** 顺序即按键循环顺序;文案用于状态行 */
 export const SORT_LABELS: Record<SortMode, string> = {
-	default: "默认(运行中优先)",
+	default: "运行日期",
 	alpha: "字母",
 };
 

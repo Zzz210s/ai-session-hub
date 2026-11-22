@@ -61,7 +61,7 @@ test("act:没有可见行时什么都不做", async () => {
 test("act(smart):历史会话没有拓展可开时给兜底提示", async () => {
 	const { actions, calls } = harness([row("a")]);
 	await actions.act("smart");
-	assert.deepEqual(calls.notify, ["该会话未运行:按 a 在新窗口继续(Shift+a 就地接管)"]);
+	assert.deepEqual(calls.notify, ["该会话未运行:按 A 在新标签继续(Ctrl+A 就地接管)"]);
 	assert.equal(calls.redraw, 1);
 });
 
@@ -101,13 +101,13 @@ test("act:GUI 会话按 f 同样只聚焦窗口", async () => {
 	assert.deepEqual(calls.notify, ["已聚焦 Zed 窗口"]);
 });
 
-test("act:GUI 会话按 a(接管)给出明确提示", async () => {
+test("act:GUI 会话按 A(接管)给出明确提示", async () => {
 	const { actions, calls } = harness([guiRow("dsh", "s1", "会话")]);
 	await actions.act("attach");
 	assert.deepEqual(calls.notify, ["DeepSeek Harness 是 GUI 应用:没有终端可接管,按 Enter/f 聚焦窗口"]);
 });
 
-test("act:GUI 会话按 c 复制会话信息(而不是恢复命令)", async () => {
+test("act:GUI 会话按 C 复制会话信息(而不是恢复命令)", async () => {
 	const copied = [];
 	const { actions, calls } = harness([guiRow("zed", "t1", "线程")], {
 		copySessionInfo: async (view) => {

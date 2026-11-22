@@ -17,9 +17,9 @@ export function describeFocusFailure(tool: Tool, detail: string): string {
 		case "FOCUS_FAILED":
 			return `无法把 ${label} 窗口切到前台(Windows 前台锁),可先点一下窗口再试`;
 		case "WINDOW_NOT_FOUND":
-			return `没找到 ${label} 的窗口,可能刚关闭或标题变了(按 r 刷新后重试)`;
+			return `没找到 ${label} 的窗口,可能刚关闭或标题变了(按 R 刷新后重试)`;
 		case "BAD_HWND":
-			return `${label} 的窗口句柄无效(窗口可能刚关闭),按 r 刷新后重试`;
+			return `${label} 的窗口句柄无效(窗口可能刚关闭),按 R 刷新后重试`;
 		case "":
 			return `聚焦 ${label} 失败,脚本没有返回原因`;
 		default:
@@ -47,7 +47,7 @@ export async function focusApp(tool: Tool, overrides: Partial<FocusAppDeps> = {}
 		const result = await deps.focusLinux(app.title, app.hwnd);
 		return { ok: result.ok, detail: result.ok ? `已聚焦 ${label} 窗口` : describeFocusFailure(tool, result.detail) };
 	}
-	if (!app.hwnd) return { ok: false, detail: `找到 ${label} 进程,但没找到窗口句柄(按 r 刷新后重试)` };
+	if (!app.hwnd) return { ok: false, detail: `找到 ${label} 进程,但没找到窗口句柄(按 R 刷新后重试)` };
 	const result = await deps.focusWindows(app.hwnd);
 	return { ok: result.ok, detail: result.ok ? `已聚焦 ${label} 窗口` : describeFocusFailure(tool, result.detail) };
 }

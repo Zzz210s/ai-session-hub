@@ -27,7 +27,7 @@ test("createSortToggle:循环切换、光标回顶、写盘、提示都做到", 
 	toggle();
 	assert.equal(mode, "default", "再按一次回到默认");
 	assert.deepEqual(persisted, ["alpha", "default"]);
-	assert.equal(messages.at(-1), "排序:默认(运行中优先)");
+	assert.equal(messages.at(-1), "排序:运行日期", "默认排序对外叫「运行日期」");
 });
 
 test("createRefreshAction:清缓存 → 重扫 → 重绘,清缓存失败也继续重扫", async () => {

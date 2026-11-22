@@ -72,7 +72,7 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			deps.notify(result.detail);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			deps.notify(`打开失败: ${message}(按 c 复制命令可手动执行)`);
+			deps.notify(`打开失败: ${message}(按 C 复制命令可手动执行)`);
 		}
 	};
 	const attachInPlace = (view: SessionView): Promise<void> =>
@@ -102,7 +102,7 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			// 正在运行的会话:再开一个进程去 resume 同一份会话文件,pi/claude 会报占用/写坏历史,
 			// 所以这里只切窗口;真要另开一份用 c 复制命令手动来
 			if (view.state === "running" && view.live?.tab) {
-				deps.notify(`该会话正在运行,已切到它的窗口(另开一份请按 c 复制命令): ${(await focusSession(view)).detail}`);
+				deps.notify(`该会话正在运行,已切到它的窗口(另开一份请按 C 复制命令): ${(await focusSession(view)).detail}`);
 				return;
 			}
 			return attach(view);
@@ -118,7 +118,7 @@ export function createTuiActions(deps: TuiActionDeps): TuiActions {
 			// 历史会话:交给拓展(如分屏)打开;没有拓展时提示可用 a 接管
 			const opener = deps.extensions.find((extension) => extension.openSelected);
 			if (opener?.openSelected) await opener.openSelected(deps.extensionContext());
-			else deps.notify("该会话未运行:按 a 在新窗口继续(Shift+a 就地接管)");
+			else deps.notify("该会话未运行:按 A 在新标签继续(Ctrl+A 就地接管)");
 		}
 	};
 

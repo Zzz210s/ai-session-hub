@@ -162,8 +162,8 @@ function footerText(state: TuiState): string {
 		: state.searchMode
 			? "输入即筛选 | Enter 完成 | Esc 取消搜索 | ⌫ 删空退出"
 			: state.rows[state.cursor]?.kind === "gui"
-				? "Enter 聚焦窗口 | c 复制会话信息 | d 删除(DSH) | s 排序 | q 退出"
-				: "a 新标签继续 | Ctrl+A 就地接管 | f 聚焦窗口 | c 复制 | d 删除 | s 排序 | r 刷新 | 1-4 筛选 | / 搜索 | q 退出";
+				? "Enter 聚焦窗口 | C 复制会话信息 | D 删除(DSH) | S 排序 | Q 退出"
+				: "A 新标签继续 | Ctrl+A 就地接管 | F 聚焦窗口 | C 复制 | D 删除 | S 排序 | R 刷新 | 1-4 筛选 | / 搜索 | Q 退出";
 	const message = state.confirm ?? state.message;
 	return message ? `${keys} | ${sanitizeForDisplay(message)}` : keys;
 }
