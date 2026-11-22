@@ -9,7 +9,7 @@ import { copyToClipboard } from "./clipboard.ts";
 import { describeFocusFailure, focusApp } from "./gui-actions.ts";
 import { focusTab, focusWindow } from "./live/windows.ts";
 import { focusWindowLinux } from "./live/linux-focus.ts";
-import { resumeCommand } from "./resume.ts";
+import { cliAvailable, resumeCommand } from "./resume.ts";
 import { resolveShell, shellArgs } from "./shell.ts";
 
 export { resumeCommand } from "./resume.ts";
@@ -53,7 +53,9 @@ export async function focusSession(view: SessionView): Promise<ActionResult> {
 export async function copyResumeCommand(view: SessionView): Promise<ActionResult> {
 	const command = resumeCommand(view);
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool}` };
-	return copyToClipboard(command);
+	const result = await copyToClipboard(command);
+	// 本机没装也照抄 —— 命令本身还有用(贴到装了它的环境里跑),只是要说明白
+	return result.ok && !cliAvailable(view.tool) ? { ok: true, detail: `${result.detail}(注意:本机没找到 ${view.tool} 可执行文件)` } : result;
 }
 
 /** 在本进程前台接管终端运行该会话(供 TUI 的 attach 模式使用),返回退出码。

@@ -5,6 +5,7 @@
 
 import type { SessionView } from "./model.ts";
 import { attachSession, resumeCommand } from "./actions.ts";
+import { cliAvailable, missingCliMessage } from "./resume.ts";
 import type { TuiScreen } from "./tui-screen.ts";
 
 export async function runAttach(
@@ -12,6 +13,12 @@ export async function runAttach(
 	view: SessionView,
 	hooks: { reload: () => Promise<void>; notify: (message: string) => void; redraw: () => void },
 ): Promise<void> {
+	// 就地接管走的是同一份命令:可执行文件不在就只提示,别把终端交出去(交出去回来才知道是 127)
+	if (!cliAvailable(view.tool)) {
+		hooks.notify(missingCliMessage(view.tool));
+		hooks.redraw();
+		return;
+	}
 	screen.handOff(`[ai-session-hub] 正在接管终端: ${resumeCommand(view)}`);
 	const code = await attachSession(view);
 	hooks.notify(`会话已退出(exit ${code})`);

@@ -166,6 +166,17 @@ macOS 目前不支持(BSD `ps` 没有 `-o etimes`,实况探测会拿不到进程
 
 GUI 会话(Zed / DeepSeek Harness)有部分键位不同——见下文「GUI 会话」。
 
+## 没装对应 CLI 时
+
+会话数据可能在、可执行文件却不在了(换了机器、在 WSL 里用过 opencode、卸载了某个 CLI)。这时按 `A` **不会**开一个注定失败的标签:
+
+```
+没找到 opencode 可执行文件(会话数据还在 ~/.local/share/opencode):装好 opencode 后可继续;
+装在别处可用 AIS_OPENCODE_BIN=<路径> 指过来;要用已有的会话数据也可按 C 复制命令到已装它的环境执行
+```
+
+ais 在打开前逐个候选路径核对可执行文件(官方安装器的 `~/.opencode/bin`、scoop、bun、pnpm/npm、winget,以及 PATH 里的 `.exe`/`.cmd`),找不到就只提示、不开窗口。`C 复制命令`照旧可用(复制出来的命令贴到装了它的环境里能跑),`Ctrl+A` 就地接管也会先拦一道。
+
 ## 排序
 
 按 `S` 在三种排序间循环:

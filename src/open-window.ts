@@ -18,7 +18,7 @@ import { openInNewTerminal } from "./live/linux-focus.ts";
 import type { SessionView } from "./model.ts";
 import type { OpenConfig } from "./open-config.ts";
 import { loadOpenConfig } from "./open-config.ts";
-import { resumeCommand } from "./resume.ts";
+import { cliAvailable, missingCliMessage, resumeCommand } from "./resume.ts";
 import { currentTab, currentTabCached } from "./live/current-tab.ts";
 import { resolveShell, shellArgs, shellFlavor } from "./shell.ts";
 
@@ -123,6 +123,10 @@ export async function openSession(view: SessionView, options: OpenOptions = {}):
 	// 引号要跟目标 shell 的语法一致:bash 用单引号,PowerShell 用单引号(cmd 只能用双引号)
 	const command = resumeCommand(view, shellFlavor(shell));
 	if (!command) return { ok: false, detail: `暂不支持 ${view.tool} 的恢复命令` };
+	// 可执行文件不在就别开标签:WT 会照着命令起一个 shell,立刻 `command not found`
+	// 退出(退出码 127),留下一个死窗口 —— 用户看到的正是这条 2026-11-22 报障。
+	// 会话数据可能还在(来自另一台机器 / 另一个环境),所以既要说清也给出出路。
+	if (!cliAvailable(view.tool)) return { ok: false, detail: missingCliMessage(view.tool) };
 	const rawCwd = view.cwd && view.cwd.length > 0 ? view.cwd : process.cwd();
 	const cwd = existsSync(rawCwd) ? rawCwd : process.cwd();
 	const title = sessionTitle(view);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { quoteForShell, resumeCommand } from "../src/resume.ts";
+import { cliAvailable, missingCliMessage, quoteForShell, resolveCliCommand, resumeCommand } from "../src/resume.ts";
 
 const SESSION = String.raw`C:\Users\23652\.pi\agent\sessions\--F--0-SchoolWork-4-1-大学物理--\2026-09-18T03-12-27-718Z_01a0b280.jsonl`;
 
@@ -28,4 +28,23 @@ test("resumeCommand:claude / opencode 用会话 id,不做多余引号", () => {
 	assert.match(resumeCommand({ tool: "claude", id: "abc-123" }), /--resume abc-123$/);
 	assert.match(resumeCommand({ tool: "opencode", id: "ses_1" }), /--session ses_1$/);
 	assert.equal(resumeCommand({ tool: "zed", id: "z" }), "");
+});
+
+/* ---------- 可执行文件检测(2026-11-22 报障:opencode 未安装,ais 仍开标签 → command not found 127) ---------- */
+
+test("cliAvailable:本机的 pi / claude 能解析到 .CMD,opencode 没有安装", () => {
+	// 这台机器上 opencode 确实没装(只有会话数据库),所以它必须被判为不可用
+	assert.equal(cliAvailable("pi"), true, "pi 应能找到可执行文件");
+	assert.ok(resolveCliCommand("pi").includes("/"), "应解析成绝对路径,而不是裸命令名");
+	assert.equal(cliAvailable("opencode"), false, "opencode 未安装 → 不可用");
+	assert.equal(resolveCliCommand("opencode"), "opencode", "解析不出路径时退回裸命令名(复制到别处还能用)");
+});
+
+test("missingCliMessage:说清没装、数据还在、给出三条出路,且不谎称已启动", () => {
+	const text = missingCliMessage("opencode");
+	assert.match(text, /没找到 opencode 可执行文件/);
+	assert.ok(text.includes("~/.local/share/opencode"), "要说明会话数据还在哪");
+	assert.match(text, /AIS_OPENCODE_BIN/, "给出覆盖路径的办法");
+	assert.match(text, /按 C 复制命令/, "给出复制到别处执行的出路");
+	assert.doesNotMatch(text, /已启动|已打开/, "没装就不能说成功");
 });

@@ -171,6 +171,17 @@ Single-letter shortcuts are **always written in upper case** in the hints (`A` `
 
 GUI sessions (Zed / DeepSeek Harness) have some keys that differ — see [GUI sessions](#gui-sessions-zed--deepseek-harness) below.
 
+## When the CLI is not installed
+
+Session data can outlive the binary: a machine move, a session created under WSL, a CLI that was uninstalled. Pressing `A` then does **not** open a doomed tab:
+
+```
+没找到 opencode 可执行文件(会话数据还在 ~/.local/share/opencode):装好 opencode 后可继续;
+装在别处可用 AIS_OPENCODE_BIN=<路径> 指过来;要用已有的会话数据也可按 C 复制命令到已装它的环境执行
+```
+
+Before opening, ais checks every known location for the executable (the official installer's `~/.opencode/bin`, scoop, bun, pnpm/npm, winget, plus `.exe`/`.cmd` entries on `PATH`). If none exists it reports the reason instead of opening a window. `C` still copies the command (useful in an environment that has the CLI), and `Ctrl+A` attach is guarded the same way.
+
 ## Sorting
 
 `S` cycles through three orders:

@@ -6,7 +6,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyEnvOverrides, DEFAULT_OPEN, readOpenConfig } from "../src/open-config.ts";
-import { buildWtArgs, resolveGeometry, resolveProfile, sanitizePair } from "../src/open-window.ts";
+import { buildWtArgs, openSession, resolveGeometry, resolveProfile, sanitizePair } from "../src/open-window.ts";
+import { cliAvailable } from "../src/resume.ts";
 import { shellArgs } from "../src/shell.ts";
 import { profileNameFromEnv } from "../src/console-geometry.ts";
 
@@ -166,4 +167,24 @@ test("buildWtArgs:标签模式带本页索引时,开完把焦点切回来", () =
 test("buildWtArgs:新窗口模式/没索引时不追加 focus-tab", () => {
 	assert.ok(!buildWtArgs({ ...base, mode: "window", focusTabIndex: 2 }).includes("focus-tab"), "新窗口不该切焦点");
 	assert.ok(!buildWtArgs({ ...base, mode: "tab", focusTabIndex: null }).includes("focus-tab"));
+});
+
+test("openSession:可执行文件不在时不开标签,而是说清原因(2026-11-22 的 127 报障)", async () => {
+	if (cliAvailable("opencode")) return; // 装了 opencode 的环境里这条没有意义
+	const result = await openSession({
+		tool: "opencode",
+		id: "ses_abc",
+		file: "",
+		cwd: process.cwd(),
+		name: "open 会话",
+		topic: "open 会话",
+		firstMessage: "",
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		state: "stored",
+		attention: false,
+	});
+	assert.equal(result.ok, false, "不能报告成功");
+	assert.match(result.detail, /没找到 opencode 可执行文件/, "要说清是没装,不是会话坏了");
+	assert.doesNotMatch(result.detail, /已在.*启动/, "没装就别假装开过标签");
 });
