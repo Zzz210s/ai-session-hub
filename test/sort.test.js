@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { asSortMode, nextSortMode, sortBucket, sortName, sortRows } from "../src/sort.ts";
 
-const view = (name, { updated = 0, tool = "pi", topic = "" } = {}) => ({
+const view = (name, { updated = 0, created = 0, tool = "pi", topic = "" } = {}) => ({
 	id: `id-${name}`,
 	tool,
 	name,
@@ -10,20 +10,22 @@ const view = (name, { updated = 0, tool = "pi", topic = "" } = {}) => ({
 	file: "",
 	cwd: "C:/w",
 	firstMessage: "",
-	createdAt: new Date(updated),
+	createdAt: new Date(created),
 	updatedAt: new Date(updated),
 	state: "stored",
 	attention: false,
 });
 
-test("nextSortMode:默认 → 字母 → 默认(按键循环)", () => {
+test("nextSortMode:运行日期 → 字母 → 创建顺序 → 运行日期(按键循环)", () => {
 	assert.equal(nextSortMode("default"), "alpha");
-	assert.equal(nextSortMode("alpha"), "default");
+	assert.equal(nextSortMode("alpha"), "created");
+	assert.equal(nextSortMode("created"), "default");
 });
 
-test("asSortMode:只认 alpha / default(别的一律 undefined,配置写错不炸)", () => {
+test("asSortMode:只认 alpha / default / created(别的一律 undefined,配置写错不炸)", () => {
 	assert.equal(asSortMode("alpha"), "alpha");
 	assert.equal(asSortMode("default"), "default");
+	assert.equal(asSortMode("created"), "created");
 	assert.equal(asSortMode("name"), undefined);
 	assert.equal(asSortMode(undefined), undefined);
 });
@@ -75,4 +77,28 @@ test("sortName:name 优先,退回 topic,最后用 id 前缀", () => {
 	assert.equal(sortName(view("名字", { topic: "话题" })), "名字");
 	assert.equal(sortName({ ...view(""), topic: "话题" }), "话题");
 	assert.equal(sortName({ ...view(""), topic: "", id: "abcdefgh123" }), "abcdefgh");
+});
+
+test("sortRows:创建顺序按创建时间排,最早创建的在前", () => {
+	const rows = [
+		view("第三个", { created: 3000, updated: 9000 }),
+		view("第一个", { created: 1000, updated: 2000 }),
+		view("第二个", { created: 2000, updated: 1000 }),
+	];
+	assert.deepEqual(sortRows(rows, "created").map((r) => r.name), ["第一个", "第二个", "第三个"], "创建顺序 = 时间升序");
+	assert.deepEqual(rows.map((r) => r.name), ["第三个", "第一个", "第二个"], "不能改动入参数组");
+});
+
+test("sortRows:同一时刻创建时按名字排,顺序稳定", () => {
+	const rows = [view("beta", { created: 500 }), view("Alpha", { created: 500 }), view("阿尔法", { created: 500 })];
+	const first = sortRows(rows, "created").map((r) => r.name);
+	assert.deepEqual(first, sortRows([...rows].reverse(), "created").map((r) => r.name), "输入顺序不同也应得到同样结果");
+	assert.equal(first.at(-1), "阿尔法", "拉丁在前、中文在后(与字母序同口径)");
+});
+
+test("sortRows:创建时间缺失/非法时当 0(排在最前),不会因为 NaN 打乱顺序", () => {
+	const broken = view("坏时间", { created: 1000 });
+	broken.createdAt = new Date("不是日期");
+	const rows = [view("正常", { created: 2000 }), broken];
+	assert.deepEqual(sortRows(rows, "created").map((r) => r.name), ["坏时间", "正常"], "NaN 当 0 处理,顺序仍是确定的");
 });

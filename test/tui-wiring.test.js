@@ -25,8 +25,12 @@ test("createSortToggle:循环切换、光标回顶、写盘、提示都做到", 
 	assert.equal(redraws, 1, "切完要立刻重绘");
 
 	toggle();
-	assert.equal(mode, "default", "再按一次回到默认");
-	assert.deepEqual(persisted, ["alpha", "default"]);
+	assert.equal(mode, "created", "第二次按 S 切到创建顺序");
+	assert.equal(messages.at(-1), "排序:创建顺序");
+
+	toggle();
+	assert.equal(mode, "default", "第三次回到运行日期");
+	assert.deepEqual(persisted, ["alpha", "created", "default"], "每次切换都要写盘");
 	assert.equal(messages.at(-1), "排序:运行日期", "默认排序对外叫「运行日期」");
 });
 

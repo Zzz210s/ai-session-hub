@@ -166,7 +166,7 @@ async function main(): Promise<void> {
 	}
 
 	if (args.command && args.command !== "tui") {
-		console.error(`未知命令: ${args.command}\n用法: ais [list|doctor|focus <查询>|resume <查询>] [--json] [--live] [--sort=alpha] [--tool=pi,claude,opencode]`);
+		console.error(`未知命令: ${args.command}\n用法: ais [list|doctor|focus <查询>|resume <查询>] [--json] [--live] [--sort=alpha|created] [--tool=pi,claude,opencode]`);
 		process.exitCode = 2;
 		return;
 	}

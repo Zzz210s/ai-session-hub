@@ -152,7 +152,7 @@ Before `ais` opens the board it runs the update commands for every AI CLI and it
 | `Enter` | smart: a running session → focus its window; a historical one → open in a **split pane** (this second behaviour exists only when the split-pane extension is installed) |
 | `A` | open the session in a **new tab of the current window** (configurable) |
 | `Ctrl+A` | hand the terminal over to the session (attach); exits back to the board when the session ends |
-| `S` | switch sorting: running/date (running first, then most recently active) ↔ alphabetical by session name (Chinese by pinyin); the choice is remembered |
+| `S` | switch sorting: running/date (running first, then most recently active) ↔ alphabetical by session name (Chinese by pinyin) ↔ creation order (oldest first); the choice is remembered |
 | `p` | open the selected session in a split pane |
 | `Tab` | cycle focus: list → pane 1 → pane 2 → list |
 | `x` / `Ctrl+W` | close a pane; `Ctrl+Q` returns focus from a pane to the list |
@@ -173,13 +173,19 @@ GUI sessions (Zed / DeepSeek Harness) have some keys that differ — see [GUI se
 
 ## Sorting
 
-The default order is called **running/date**: running first, then most recently active — it answers "what was I working on". Press `S` for **alphabetical order**:
+`S` cycles through three orders:
 
-- Latin letters first, then Chinese by pinyin (same convention as Windows Explorer); numbers sort numerically (`会话 2` before `会话 10`)
-- case-insensitive; equal names are ordered by tool, then by recency, so the order is stable
-- the header shows the active order only when it is not the default (`排序 字母`) — otherwise the change would look like a bug
+| Order | How it sorts | When to use it |
+|---|---|---|
+| **running/date** (default) | running first, then most recently active | "what was I working on" |
+| **alphabetical** | by session name: Latin first, then Chinese by pinyin (same convention as Windows Explorer); numbers sort numerically (`会话 2` before `会话 10`) | you know the name |
+| **creation order** | by creation time, **oldest first** | "what did I start, in order" |
+
+- alphabetical order is case-insensitive; equal names fall back to tool, then recency, so the order is stable
+- creation order ties (batch imports, several sessions started in the same second) fall back to name
+- the header shows the active order only when it is not the default (`排序 字母` / `排序 创建顺序`) — otherwise the change would look like a bug
 - the choice is stored in `~/.ai-session-hub/config.json` under `ui.sort` and survives restarts
-- the CLI takes the same option: `ais list --sort=alpha`
+- the CLI takes the same option: `ais list --sort=alpha` / `ais list --sort=created`
 
 ## Deleting a session
 
